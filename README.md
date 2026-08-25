@@ -37,11 +37,9 @@ at the finest mesh.
 2. Apply the patches in `patches_ccx/` (see its `README.md`).
 3. Rebuild.
 
-The F-barES-FEM-T4 element itself is patches `0009` (elements, dispatchers,
-build), `0010` (asymmetric Petrov--Galerkin path), `0011` (ring-x support
-reduction) and `0012` (out-of-core PARDISO). The earlier patches are the
-dependency chain and the precursor MINI (`U4`) and nodal-B-bar (`U5`/`U6`)
-elements documented in `elements_ccx/README.md`.
+The F-barES-FEM-T4 element is patches `0001`--`0005` (wide user-element
+matrix, element wiring, asymmetric Petrov--Galerkin path, ring-x support
+reduction, out-of-core PARDISO).
 
 ## Generating a deck and running
 
@@ -58,7 +56,7 @@ general-matrix path (`mtype = 11`).
   patch test recovering `C1111 = K + 4G/3`, the `c=0` collapse to selective
   ES-FEM-T4, the volumetric-constraint rank).
 * `elements_ccx/tests/verify_fbar_nl.py` --- finite-strain checks N1--N4.
-* `elements_ccx/tests/verify_u8_chain.py` --- the Fortran volumetric walk
+* `elements_ccx/tests/verify_u3_chain.py` --- the Fortran volumetric walk
   against the reference Python operator `S = E A^c`.
 * `elements_ccx/tests/locking_sweep.sh`, `stability_modes.py` --- locking and
   spurious-mode behaviour.

@@ -1,8 +1,8 @@
 !
 !     SPAX: U3 -- the F-barES-FEM-T4 VOLUMETRIC smoothing chain, eqs. (6)-(11).
 !
-!     Named U3, not U8: nodalbbar.py already uses U8 for its 5-node theta
-!     carrier and U7<letter> for the graded U5 variants.
+!     U3 is the volumetric smoothing domain of the F-barES-FEM-T4 element
+!     (U2 the deviatoric, U4 the null base tetrahedron).
 !
 !     Geometry and operator shared by e_c3d_u3 (stiffness) and resultsmech_u3
 !     (internal forces), so the two cannot drift apart.
@@ -74,16 +74,16 @@
 !
 !     The map, the nodal volumes V_n of eq. (6) and the element volumes are
 !     built once and read by every thread.  The test MUST stay inside the
-!     critical region -- see u6patch.f: a double-checked flag outside it let a
+!     critical region: a double-checked flag outside it would let a
 !     thread read a half-built map and silently corrupted the assembly.
 !
-      call u6lock()
+      call fbarlock()
       if(mapdone.eq.0) then
         maxn=0
         nlen=0
         do i=1,ne
           if(ipkon(i).lt.0) cycle
-          if(lakon(i)(1:2).ne.'U5') cycle
+          if(lakon(i)(1:2).ne.'U4') cycle
           do j=1,4
             k=kon(ipkon(i)+j)
             if(k.gt.maxn) maxn=k
@@ -99,7 +99,7 @@
         do i=1,ne
           volel(i)=0.d0
           if(ipkon(i).lt.0) cycle
-          if(lakon(i)(1:2).ne.'U5') cycle
+          if(lakon(i)(1:2).ne.'U4') cycle
           do j=1,4
             nstart(kon(ipkon(i)+j)+1)=nstart(kon(ipkon(i)+j)+1)+1
           enddo
@@ -109,7 +109,7 @@
         enddo
         do i=1,ne
           if(ipkon(i).lt.0) cycle
-          if(lakon(i)(1:2).ne.'U5') cycle
+          if(lakon(i)(1:2).ne.'U4') cycle
           do j=1,4
             k=kon(ipkon(i)+j)
             nstart(k)=nstart(k)+1
@@ -132,7 +132,7 @@
 !
         do i=1,ne
           if(ipkon(i).lt.0) cycle
-          if(lakon(i)(1:2).ne.'U5') cycle
+          if(lakon(i)(1:2).ne.'U4') cycle
           do j=1,4
             do k=1,3
               xl(k,j)=co(k,kon(ipkon(i)+j))
@@ -143,7 +143,7 @@
         enddo
         mapdone=1
       endif
-      call u6unlock()
+      call fbarunlock()
 !
       vh=0.d0
       xkv=0.d0
@@ -158,7 +158,7 @@
       nb=konl(2)
       if((na.gt.maxn).or.(nb.gt.maxn)) then
         write(*,*) '*ERROR in u3vol: element',nelem,' edge node'
-        write(*,*) '       ',na,' or ',nb,' is in no U5 element'
+        write(*,*) '       ',na,' or ',nb,' is in no U4 element'
         call exit(201)
       endif
 !
@@ -193,7 +193,7 @@
 !
 !     K-weighted volume.  An edge domain never spans two materials here (the
 !     smoothing is split by material), so K is that material's, but it is read
-!     per contributing element for the same reason u6patch does: it makes a
+!     per contributing element: it makes a
 !     mixed domain impossible to get silently wrong.
 !
       do i=1,ncur

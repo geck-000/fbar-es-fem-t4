@@ -8,10 +8,9 @@ elements_ccx/docs/fbar_es_fem_t4.md; this script is only the deck side.
     K = K_dev   per EDGE (U2): V_h Bt^T D_dev Bt          eq. (1), (4), (13)
       + K_vol   per EDGE (U3): (K V_h) tbar^T sbar        eq. (6)-(11), (17)
 
-The base tets stay in the deck retyped to U5Z -- a NULL U5, suffix Z --
+The base tets stay in the deck retyped to U4 -- the null base tetrahedron --
 contributing nothing: U2 and U3 carry the whole stiffness and both read the
-tets for geometry through the 'U5' node->element map.  That is a different
-arrangement from U5+U6, where U5 carries the deviatoric itself.
+tets for geometry through the 'U4' node->element map.
 
 WHY THE CONNECTIVITY IS WRITTEN OUT AT ALL.  The elements recompute their own
 weights from geometry -- which subsets of a ring form tets is not recoverable
@@ -59,8 +58,8 @@ LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 # Two suffix characters, LETTERS ONLY.  ccx's built-in element dispatch keys on
 # digits in the label (elements.f: label(4:4).eq.'4' -> nope=4, '10' -> 10,
 # '20' -> 20), so a type named U214 is claimed by the nope=4 rule before the
-# *USER ELEMENT lookup and ccx reads 4 nodes instead of 14.  nodalbbar.py hit
-# exactly this and it showed up on only 3 of ~36000 elements.
+# *USER ELEMENT lookup and ccx reads 4 nodes instead of 14.  This showed up
+# on only 3 of ~36000 elements.
 # THE REAL CEILING ON c IS mastruct, NOT MEMORY AND NOT THE 255-NODE LIMIT.
 #
 # mastruct.c pushes one entry per off-diagonal (dof,dof) pair of the upper
@@ -391,7 +390,7 @@ def main():
         else:
             u = ln.upper().replace(' ', '')
             # NO ELEMENT IN AN F-bar DECK CARRIES STRESS.  The base tets are
-            # U5Z and return a null matrix; U2 and U3 are smoothing domains
+            # U4 and return a null matrix; U2 and U3 are smoothing domains
             # with no shape function of their own and write nothing to stx.
             # Left in, *EL PRINT would report a column of exact zeros as if
             # it were the answer.  Read the result from displacements and
@@ -415,10 +414,10 @@ def main():
             if u.startswith('*ELEMENT') and any(
                     ('ELSET=' + e).upper() in u for e in sets):
                 if not u5decl:
-                    out.append('*USER ELEMENT,TYPE=U5Z,NODES=4,'
+                    out.append('*USER ELEMENT,TYPE=U4,NODES=4,'
                                'INTEGRATIONPOINTS=1,MAXDOF=3')
                     u5decl = True
-                out.append(ln.replace('C3D4', 'U5Z').replace('c3d4', 'U5Z'))
+                out.append(ln.replace('C3D4', 'U4').replace('c3d4', 'U4'))
                 continue
             if u.startswith('*STATIC'):
                 # The volumetric operator of eq. (17) is NOT symmetric, so the

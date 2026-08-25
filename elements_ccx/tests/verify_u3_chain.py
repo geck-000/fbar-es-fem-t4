@@ -1,4 +1,4 @@
-"""Mirror u8vol.f's element-weight walk in Python and check it reproduces the
+"""Mirror u3vol.f's element-weight walk in Python and check it reproduces the
 verified operator S = E A^c from smoothing_proto.fbar_es_operators.
 
 The Fortran builds the chain as a ROW walk over element weight lists, because
@@ -19,7 +19,7 @@ fails = []
 
 
 def walk(nodes, tets, mat, g, vol, imat, edge, ncyc):
-    """Exactly u8vol.f: eq. (8) ring, then ncyc cycles of A = P Q."""
+    """Exactly u3vol.f: eq. (8) ring, then ncyc cycles of A = P Q."""
     at = {}
     for e in range(len(tets)):
         if mat[e] != imat:

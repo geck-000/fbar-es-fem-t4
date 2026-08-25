@@ -112,7 +112,7 @@ def main():
     for kind, t in order:
         if kind == 'use' and t not in firstuse:
             firstuse[t] = True
-            if t.startswith('U') and t not in decl and t != 'U5':
+            if t.startswith('U') and t not in decl and t != 'U4':
                 fails.append('undeclared type ' + t)
     chk('deck: every user type declared before use',
         not any(f.startswith('undeclared') for f in fails))
@@ -120,7 +120,7 @@ def main():
     chk('deck: type suffixes are letters only (elements.f digit rule)',
         not bad, str(bad[:5]))
 
-    # material of every U5 tet, from the *SOLID SECTION of its elset
+    # material of every U4 tet, from the *SOLID SECTION of its elset
     tets, mats = {}, {}
     esof, matof = {}, {}
     mode, cur, curtype = None, None, None
@@ -131,11 +131,11 @@ def main():
         if s.startswith('*'):
             u = s.upper().replace(' ', '')
             mode = None
-            if u.startswith('*ELEMENT') and 'TYPE=U5' in u:
+            if u.startswith('*ELEMENT') and 'TYPE=U4' in u:
                 cur = next((p.split('=')[1] for p in s.split(',')
                             if p.strip().upper().startswith('ELSET=')),
                            'ALL').strip()
-                mode = 'u5'
+                mode = 'u4'
             elif u.startswith('*SOLIDSECTION'):
                 es = next(p.split('=')[1] for p in s.split(',')
                           if p.strip().upper().startswith('ELSET=')).strip()
@@ -143,14 +143,14 @@ def main():
                           if p.strip().upper().startswith('MATERIAL=')).strip()
                 matof[es] = mt
             continue
-        if mode == 'u5':
+        if mode == 'u4':
             f = [x.strip() for x in s.split(',') if x.strip()]
             if len(f) >= 5:
                 tets[int(f[0])] = [int(x) for x in f[1:5]]
                 esof[int(f[0])] = cur
     for e in tets:
         mats[e] = matof[esof[e]]
-    chk('deck: U5 tets carried over from the original',
+    chk('deck: U4 tets carried over from the original',
         len(tets) > 0, '%d found' % len(tets))
 
     # every U2 / U3 element, against an independent walk

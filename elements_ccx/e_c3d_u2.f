@@ -15,10 +15,8 @@
 !
 !     Together with U3 (the volumetric half, eqs. 6-11) this replaces the base
 !     tets' stiffness entirely, so the base tets must contribute NOTHING: the
-!     generator retypes them to U5Z, a null U5 (e_c3d_u5 and resultsmech_u5
-!     both return on suffix Z), which keeps them in the model as the geometry
-!     U2 and U3 read.  That is a different arrangement from U5+U6, where U5
-!     carries the deviatoric itself.
+!     generator retypes them to U4, the null base tetrahedron, which keeps
+!     them in the model as the geometry U2 and U3 read.
 !
 !         *USER ELEMENT,TYPE=U2,NODES=<ring size>,INTEGRATIONPOINTS=1,MAXDOF=3
 !

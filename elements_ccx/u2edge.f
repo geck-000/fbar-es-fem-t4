@@ -1,10 +1,9 @@
 !
 !     SPAX: U2 -- the edge-based (ES-FEM) DEVIATORIC smoothing domain.
 !
-!     Named U2, not U7: nodalbbar.py already claims U7<letter> for the
-!     graded U5 variants and U8 for its 5-node theta carrier.  U2 and U3 are
-!     the free family digits; mastruct.c's user-element list needs them added
-!     alongside the 4..8 the earlier patches put there.
+!     U2 is the deviatoric and U3 the volumetric smoothing domain of the
+!     F-barES-FEM-T4 element; U4 is the null base tetrahedron whose only
+!     role is to carry the geometry.
 !
 !     Geometry shared by e_c3d_u2 (stiffness) and resultsmech_u2 (internal
 !     forces), so the two cannot drift apart -- the failure that leaves a patch
@@ -17,21 +16,19 @@
 !         gt(c,i)    = (1/V_h) sum over those tets of (V_e/6) grad(L_i)|_e
 !
 !     and the stiffness is V_h * Bt^T D_dev Bt, which in index form is exactly
-!     e_c3d_u5's expression with vol -> V_h and g -> gt.  The /6 is the edge
+!     the C3D4 deviatoric expression with vol -> V_h and g -> gt.  The /6 is the edge
 !     count of a T4, so each tet hands its whole volume to its six edges and
 !     sum_h V_h = sum_e V_e exactly.
 !
 !     THE EDGE IS konl(1)-konl(2).  The rest of the connectivity is the other
-!     nodes of the tets sharing it, in any order.  As with U6 the geometry is
-!     not recoverable from the node list alone -- which subsets of the ring form
+!     nodes of the tets sharing it, in any order.  The geometry is not
+!     recoverable from the node list alone -- which subsets of the ring form
 !     tets is not determined by it -- so the element finds its own tets through
-!     a node->element map over the base 'U5' elements, built once and cached
-!     under the same lock, for the same reason (see u6patch.f: a double-checked
-!     flag outside the critical region let a thread read a half-built map and
-!     silently corrupted the assembly, equilibrium_gap 7.3e-01 at 8 threads).
+!     a node->element map over the base 'U4' elements, built once and cached
+!     under a lock.
 !
-!     SMOOTHING NEVER CROSSES A MATERIAL INTERFACE, exactly as in u6patch: only
-!     tets of the edge's own material contribute.  Averaging the deviatoric
+!     SMOOTHING NEVER CROSSES A MATERIAL INTERFACE: only tets of the edge's
+!     own material contribute.  Averaging the deviatoric
 !     response across a 1000x modulus contrast is not the method, and an
 !     interface edge legitimately gets one smoothing domain per phase, each
 !     with its own V_h.  Summed over both, sum_h V_h = sum_e V_e still holds.
@@ -53,13 +50,13 @@
       save mapdone,maxn
       data mapdone /0/
 !
-      call u6lock()
+      call fbarlock()
       if(mapdone.eq.0) then
         maxn=0
         nlen=0
         do i=1,ne
           if(ipkon(i).lt.0) cycle
-          if(lakon(i)(1:2).ne.'U5') cycle
+          if(lakon(i)(1:2).ne.'U4') cycle
           do j=1,4
             k=kon(ipkon(i)+j)
             if(k.gt.maxn) maxn=k
@@ -73,7 +70,7 @@
         enddo
         do i=1,ne
           if(ipkon(i).lt.0) cycle
-          if(lakon(i)(1:2).ne.'U5') cycle
+          if(lakon(i)(1:2).ne.'U4') cycle
           do j=1,4
             nstart(kon(ipkon(i)+j)+1)=nstart(kon(ipkon(i)+j)+1)+1
           enddo
@@ -83,7 +80,7 @@
         enddo
         do i=1,ne
           if(ipkon(i).lt.0) cycle
-          if(lakon(i)(1:2).ne.'U5') cycle
+          if(lakon(i)(1:2).ne.'U4') cycle
           do j=1,4
             k=kon(ipkon(i)+j)
             nstart(k)=nstart(k)+1
@@ -96,7 +93,7 @@
         nstart(1)=0
         mapdone=1
       endif
-      call u6unlock()
+      call fbarunlock()
 !
       vh=0.d0
       nfound=0
@@ -110,7 +107,7 @@
       nb=konl(2)
       if((na.gt.maxn).or.(nb.gt.maxn)) then
         write(*,*) '*ERROR in u2edge: element',nelem,' edge node'
-        write(*,*) '       ',na,' or ',nb,' is in no U5 element'
+        write(*,*) '       ',na,' or ',nb,' is in no U4 element'
         call exit(201)
       endif
 !

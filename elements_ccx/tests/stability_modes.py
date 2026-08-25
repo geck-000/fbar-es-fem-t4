@@ -95,7 +95,7 @@ def main():
     G = 4.4e5
     ice = (9.37e9 / (3 * (1 - 2 * 0.33)), 9.37e9 / (2 * 1.33))
     arms = [('c3d4', 0.0, False, 'c3d4'),
-            ('ns_vol', 0.0, False, 'ns_vol (U5+U6) s=0'),
+            ('ns_vol', 0.0, False, 'ns_vol (NS-FEM) s=0'),
             ('ns_vol', 0.07, False, 'ns_vol s=0.07'),
             ('fs_ns', 0.0, False, 'fs_ns (FS/NS-FEM)')]
     print('TWO-PHASE clamped cube: brine sphere r=0.30 in ice, n=%d, '

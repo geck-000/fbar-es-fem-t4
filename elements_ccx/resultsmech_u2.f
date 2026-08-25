@@ -13,9 +13,9 @@
 !
 !     No stress is written.  The smoothing domain is not an element with a
 !     shape function, so stx is left alone and U2 must stay out of every
-!     *EL PRINT set, exactly as for U6.  With CCX_U5_ZERO=1 the base tets are
-!     null too, so an F-barES-FEM-T4 run carries no element stress at all:
-!     read the answer from displacements and reactions.
+!     *EL PRINT set.  The base tets (U4) are null too, so an F-barES-FEM-T4
+!     run carries no element stress at all: read the answer from
+!     displacements and reactions.
 !
       subroutine resultsmech_u2(co,kon,ipkon,lakon,ne,v,elcon,nelcon,
      &     ielmat,mi,ncmat_,ntmat_,fn,calcul_fn,nal,nelem)

@@ -1,7 +1,7 @@
 Open the asymmetric assembly path to user elements, and stop truncating the
 node count at 127.
 
-U3 (F-barES-FEM-T4 volumetric, patch 0009) has a non-symmetric element
+U3 (F-barES-FEM-T4 volumetric, patch 0002) has a non-symmetric element
 matrix by construction.  Eq. (17) of Onishi, Iida & Amaya, verbatim:
 
   "Note that the stretching tensor in this equation, D~, is not the
@@ -68,17 +68,16 @@ nope and got no matrix structure at all.  The Fortran side is unaffected
 (ichar returns 0..255), so the assembly went on to ask for entries mastruct
 had never created and add_sm_st_as stopped with 'coefficient should be 0'.
 
-Patch 0008 raised the element matrix to 765 DOF on the argument that 255
+Patch 0001 raised the element matrix to 765 DOF on the argument that 255
 nodes is what lakon(8:8) can encode and userelements.f allows.  That was
 right about the Fortran and wrong about the C: the real ceiling was 127.
-U6 never hit it -- its widest measured ring is 127 exactly -- and an
-F-barES-FEM-T4 c=2 stencil of 138 nodes did, on the first deck that used
-one.  Fixed with an (unsigned char) cast in all five places.
+An F-barES-FEM-T4 c=2 stencil of 138 nodes hit it, on the first deck that
+used one.  Fixed with an (unsigned char) cast in all five places.
 
 VERIFICATION
 
   * patch test and confined compression, c = 0, 1 and 2, agree with the
-    C3D4 control to the last printed digit (patch 0009 has the table).
+    C3D4 control to the last printed digit (patch 0002 has the table).
     c = 2 exercises a 414-DOF element and is the case that found defect 3.
   * ccx reports 'Factoring the system of equations using the unsymmetric
     pardiso solver' for every U3 deck, c = 0 included.
@@ -86,25 +85,6 @@ VERIFICATION
     forces recovered by resultsmech_u3 match the matrix that mafillsmas
     assembled -- the two enter through completely separate paths.
 
---- mafillsm.f
-+++ mafillsm.f
-@@ -186,6 +186,16 @@
-             nope=1
-             ndof=3
-           elseif(lakon(i)(1:1).eq.'U') then
-+!
-+!     SPAX: U3, the F-barES-FEM-T4 volumetric edge domain, has a
-+!     NON-SYMMETRIC element matrix (eq. 17).  The assembly below walks only
-+!     the upper triangle (do ll=jj,...) into symmetric storage, which would
-+!     silently symmetrise it.  When nasym is set -- linstatic/nonlingeo set
-+!     it from the presence of U3, before this routine runs -- mafillsmas
-+!     assembles U3 in full instead.  Same arrangement as friction contact
-+!     ('ES...C') a few lines up.
-+!
-+            if((lakon(i)(1:2).eq.'U3').and.(nasym.eq.1)) cycle
-             ndof=ichar(lakon(i)(7:7))
-             nope=ichar(lakon(i)(8:8))
-           else
 --- mafillsmas.f
 +++ mafillsmas.f
 @@ -62,6 +62,17 @@
@@ -331,40 +311,6 @@ VERIFICATION
    mafillsmmain(co,nk,kon,ipkon,lakon,ne,nodeboun,ndirboun,xbounact,nboun,
  	       ipompc,nodempc,coefmpc,nmpc,nodeforc,ndirforc,xforcact,
  	       nforc,nelemload,sideload,xloadact,nload,xbodyact,ipobody,
---- mastruct.c
-+++ mastruct.c
-@@ -139,10 +139,20 @@
- 	  
- 	    /* user element
- 	       number of dofs: 7th entry of label
--	       number of nodes: 8th entry of label */
-+	       number of nodes: 8th entry of label
-+
-+	       SPAX: the (unsigned char) cast is load-bearing.  lakon is
-+	       char*, char is SIGNED on x86-64, and the node count is one
-+	       byte -- so a user element of more than 127 nodes was read
-+	       here as a NEGATIVE nope and got no matrix structure at all.
-+	       The Fortran side is unaffected (ichar returns 0..255), so
-+	       the assembly then asked for entries that had never been
-+	       created and add_sm_st_as stopped with 'coefficient should
-+	       be 0'.  Found by an F-barES-FEM-T4 c=2 volumetric stencil
-+	       of 138 nodes; userelements.f allows up to 255. */
- 	  
- 	    ndof=lakon[8*i+6];
--	    nope=lakon[8*i+7];
-+	    nope=(unsigned char)lakon[8*i+7];
- 	  }else{
- 
- 	    /* substructure (superelement) 
-@@ -380,7 +390,7 @@
- 	     number of nodes: 8th entry of label */
- 	  
- 	  ndof=lakon[8*i+6];
--	  nope=lakon[8*i+7];
-+	  nope=(unsigned char)lakon[8*i+7];
- 	}else{
- 
- 	  /* substructure (superelement) 
 --- mastructcs.c
 +++ mastructcs.c
 @@ -84,7 +84,7 @@

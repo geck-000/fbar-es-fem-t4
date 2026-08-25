@@ -138,7 +138,7 @@ elements, 311 nodes and 1630 edges:
 | c | rank `E` (test) | rank `E A^c` (trial) | constraints vs 3·n_node = 933 |
 |---|---|---|---|
 | 0 | 1011 | 1011 | ratio 0.92 — over-constrained, still locking territory |
-| 1 | 1011 |  308 | ratio 3.03 — the Q1P0 / MINI count |
+| 1 | 1011 |  308 | ratio 3.03 — the textbook Q1P0 count |
 | 2 | 1011 |  308 | ratio 3.03 |
 
 So the cyclic smoothing does exactly what it is designed to do: it relieves the
@@ -273,10 +273,8 @@ path — element routines raise `nasym`, `mafillsmasmain.c`/`mafillsmas.f`
 assemble it, and `pardiso.c` selects `mtype = 11`. The Petrov-Galerkin form of
 eq. (17) is delivered as specified.
 
-**The names are U2 and U3, not U7 and U8.** `nodalbbar.py` already emits
-`U7<letter>` for its graded U5 variants and `U8` for its 5-node theta carrier,
-and `e_c3d_u8.f` exists in the ccx tree as the face-jump stabiliser. `U2` and
-`U3` were the free family digits.
+**The names are U2 and U3.** U2 is the deviatoric and U3 the volumetric
+smoothing domain; U4 is the null base tetrahedron that carries the geometry.
 
 ### What decides the architecture: stencil width, measured
 
@@ -298,7 +296,7 @@ Consequences, and they are hard limits rather than judgement calls:
   `NODES > 255` and `mastruct.c` reads the node count from a single byte of
   the label. It would need a direct global assembly pass.
 * **`*EQUATION` + `SPRING1` is not an option**, and this is settled rather
-  than untried: the U6 header records that the campaign built exactly that,
+  than untried: the campaign built exactly that,
   verified every piece in isolation, and still got a confined-compression
   reaction **1.55x** the closed-form answer once patches overlapped.
 
@@ -320,8 +318,8 @@ production point and the element route is enough.
 
 `verify_u8_chain.py` mirrors `u3vol.f`'s walk in Python and checks it against
 the prototype operator `S = E A^c`: agreement to 1e-15 for `c = 1, 2`, on
-jittered and unjittered meshes, with unit row sums preserved. (Its name still
-carries the old U8 label.) The element-side algorithm was therefore verified
+jittered and unjittered meshes, with unit row sums preserved. The
+element-side algorithm was therefore verified
 before it compiled, not after it produced a suspicious number.
 
 Two details the generator must respect, both of which are silent failures
@@ -335,12 +333,10 @@ otherwise:
 ### The base tets are `U5Z`
 
 The tets stay in the model because `u2edge` and `u3vol` read their geometry
-through the `'U5'` node->element map, and they must contribute nothing because
-`U2` and `U3` supply the whole stiffness. `fbares.py` retypes them to `U5Z`,
-and `e_c3d_u5` / `resultsmech_u5` return on suffix `Z`. It is a deck-level
-switch rather than an environment variable on purpose: an environment variable
-would also null the tets of a nodal-B-bar (`U5` + `U6`) deck, where `U5`
-carries the deviatoric itself.
+through the `'U4'` node->element map, and they must contribute nothing because
+`U2` and `U3` supply the whole stiffness. `fbares.py` retypes them to `U4`,
+and `e_c3d_u4` / `resultsmech_u4` return immediately -- the null base tet is
+null unconditionally, not switched.
 
 ### What an F-bar deck cannot report
 
@@ -350,8 +346,8 @@ and `*EL FILE` — left in, they would print a column of exact zeros as if it
 were the answer — and adds a `*NODE FILE` if the deck has none. Read the result
 from displacements and reactions.
 
-For the same reason there is no mass matrix, so ccx `*FREQUENCY` is unavailable,
-exactly as for `U5` + `U6`. The zero-energy-mode census runs in
+For the same reason there is no mass matrix, so ccx `*FREQUENCY` is unavailable.
+The zero-energy-mode census runs in
 `smoothing_proto.py` instead, and for `c >= 1` it must use **singular values**
 of `K`, not eigenvalues: the symmetric part of the Petrov-Galerkin operator is
 indefinite, and an eigenvalue census silently reports the wrong thing.
@@ -371,7 +367,7 @@ Both are in stock ccx and both were silent.
    nodes it went negative and `mastruct` built no structure for that element;
    `add_sm_st_as` then stopped with *coefficient should be 0*. Patch `0008` had
    argued the ceiling was 255 from the Fortran side, which was right about the
-   Fortran and wrong about the C. U6's widest measured ring is 127 exactly, so
+   Fortran and wrong about the C. The widest measured ring is 127 exactly, so
    it never hit it; a `c = 2` stencil of 138 nodes did.
 
 ### Acceptance, real ccx (n = 6, jitter 0.3, nu = 0.499, K/G = 500)
@@ -422,11 +418,9 @@ Locking makes the undrained cell too stiff and so inflates R.
 | cell | element | R_ccx | R_abq | floor | excess | verdict |
 |---|---|---|---|---|---|---|
 | LMESH_m0p0240 | C3D4 | 2.5074 | 2.4701 | 0.61% | **+1.51%** | locking |
-| | U5+U6 brine | 2.4572 | | | −0.52% | inside |
 | | F-barES `c=0` | 2.4893 | | | +0.78% | locking |
 | | F-barES `c=1` | 2.4448 | | | −1.03% | below ref |
 | LMESH_m0p0120 | C3D4 | 2.5736 | 2.3786 | 0.75% | **+8.20%** | locking |
-| | U5+U6 brine | 2.1718 | | | −8.70% | below ref |
 | | F-barES `c=0` | 2.4933 | | | +4.82% | locking |
 | | F-barES `c=1` | 2.0551 | | | −13.60% | below ref |
 
@@ -456,12 +450,10 @@ table below scores against that level -- but see the two sections after it:
 | 0.0240 | CalculiX C3D4 | 2.5074 | +26.1% |
 | | F-barES `c=0` | 2.4893 | +25.2% |
 | | Abaqus C3D4H | 2.4701 | +24.2% |
-| | U5+U6 brine | 2.4572 | +23.5% |
 | | F-barES `c=1` | 2.4448 | +22.9% |
 | 0.0120 | CalculiX C3D4 | 2.5736 | +29.4% |
 | | F-barES `c=0` | 2.4933 | +25.4% |
 | | Abaqus C3D4H | 2.3786 | +19.6% |
-| | U5+U6 brine | 2.1718 | +9.2% |
 | | **F-barES `c=1`** | **2.0551** | **+3.3%, INSIDE the fine-mesh scatter** |
 
 At `0.0240` mesh error swamps everything -- every arm sits within 23-26% and
@@ -518,7 +510,6 @@ Over the two points available, the arms already separate by DIRECTION:
 |---|---|---|---|
 | CalculiX C3D4 | 2.5074 | 2.5736 | **up** +2.6% |
 | F-barES `c=0` | 2.4893 | 2.4933 | flat +0.2% |
-| U5+U6 brine | 2.4572 | 2.1718 | down −11.6% |
 | F-barES `c=1` | 2.4448 | 2.0551 | down −15.9% |
 
 The two arms that unlock are the two that move toward the region Abaqus's fine
@@ -599,9 +590,7 @@ does, and on `m0p0240` it steps straight over the target: `c = 0` — plain
 selective ES-FEM-T4 — still locks at +0.78%, one cycle moves R by −1.81
 points to −1.03%, and the ±0.61% Abaqus floor falls in the gap between them.
 `c` is an integer count of smoothings, so there is no setting in between. On
-this cell U5+U6 lands inside the floor and F-barES-FEM-T4 does not.
 
-On the finer `m0p0120` cell, where C3D4 locks by +8.20% and U5+U6 overshoots
 by −8.70%, `c = 0` halves the locking to +4.82% and is the closest any
 CalculiX arm has come — but it still locks, and `c = 1`, the arm that would
 close it, cannot be built at all (below).

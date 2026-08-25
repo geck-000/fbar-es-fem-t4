@@ -1,7 +1,7 @@
 """Numerical comparison of strain-smoothing schemes on linear tets.
 
 Written to settle, before any Fortran, whether a FACE-based smoothing fixes
-the instability that node-based smoothing (U5+U6) has on brine.
+the instability that node-based smoothing (NS-FEM) has on the inclusion.
 
 The cell is the failure in miniature: a brine slab normal to x, embedded in
 ice, driven by a prescribed affine displacement u = eps.X on the whole
@@ -13,11 +13,11 @@ boundary.  Two numbers come out.
           displacement.  This is the mode detector used on the real cells:
           an affine boundary condition admits NO fluctuation in the exact
           solution of a homogeneous body, and in a two-phase body only a
-          small one.  U5+U6 reads 19x on BRKB_b280.
+          small one.  NS-FEM reads 19x on the campaign cell.
 
 Schemes:
   c3d4     standard displacement tet
-  ns_vol   element deviatoric + NODE-smoothed volumetric  (this is U5+U6)
+  ns_vol   element deviatoric + NODE-smoothed volumetric  (NS-FEM)
   ns_full  node-smoothed full strain                      (textbook NS-FEM)
   fs_full  face-smoothed full strain                      (textbook FS-FEM)
   fs_ns    FACE-smoothed deviatoric + node-smoothed volumetric
@@ -26,7 +26,7 @@ Schemes:
 
 Smoothing never crosses a material interface: a face whose two tets have
 different materials is treated as a boundary face, and node patches are keyed
-by (node, material), exactly as nodalbbar.py does it.
+by (node, material).
 """
 import os
 import sys
@@ -416,8 +416,8 @@ def assemble(scheme, nodes, tets, mat, g, vol, faces, patch, props,
     # This is F-barES-FEM-T4(1) with eq. (8) -- the final elem->edge smoothing
     # of J -- DROPPED, so the volumetric energy sits on node patches instead of
     # edge domains.  It matters because that is the one variant CalculiX can
-    # already deliver: the volumetric half is exactly the existing, debugged U6
-    # nodal B-bar element, and only the deviatoric half is new.  The full
+    # already deliver: the volumetric half is exactly a node-smoothed patch
+    # stiffness, and only the deviatoric half is new.  The full
     # eq. (8) operator cannot be an element (173-node stencil at c=1, 494 at
     # c=2 against *USER ELEMENT's 255-node limit) and cannot be *EQUATION +
     # SPRING1 either (tried in this campaign: overlapping patches gave a
@@ -610,8 +610,8 @@ def runR(scheme, n, slab, Kb, Gb, ice, bubble=False, stab=0.0,
          jitter=0.0):
     """R = C1111(undrained brine) / C1111(drained brine), the campaign's own
     ratio, in miniature.  It needs no external reference: R -> 1 means the
-    scheme has lost the brine's bulk stiffness entirely, which is exactly how
-    MINI failed on the real cells (R 6.29 -> 1.89)."""
+    scheme has lost the brine's bulk stiffness entirely, which is exactly the failure
+    mode seen on the real cells (R 6.29 -> 1.89)."""
     und = {0: ice, 1: (Kb, Gb)}
     drn = {0: ice, 1: (Kb / 1000.0, Gb)}
     cu, fl, osc, oscm, _, _, oscs = run(scheme, n, slab, und, stab=stab,

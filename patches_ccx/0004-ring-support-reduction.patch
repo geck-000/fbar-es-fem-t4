@@ -70,7 +70,7 @@ Insertions fall by a factor ~3.3 at c = 1:
 VERIFICATION -- NOTHING MOVED
 
   * LMESH_m0p0240 c=1, the production cell: E_x = 6153500000.0, BIT-IDENTICAL
-    to the dense-structure run of patch 0010.  R is still 2.4448.
+    to the dense-structure run of patch 0003.  R is still 2.4448.
   * patch test, general six-component strain on a distorted mesh, c = 0, 1, 2:
     max|u - eps.X|/max|u| = 3.165e-07 for every arm, the same value the C3D4
     control and the dense structure gave.
@@ -90,43 +90,6 @@ under ccx_capped, which is what that wrapper exists to prevent; and swap here
 is zram (RAM-backed) so it cannot help, while /tmp is tmpfs so a 263 MB deck
 staged there is itself RAM.
 
---- mastruct.c
-+++ mastruct.c
-@@ -44,7 +44,7 @@
- 
-   ITG i,j,k,l,jj,ll,id,index,jdof1,jdof2,idof1,idof2,mpc1,mpc2,id1,id2,
-     ist1,ist2,node1,node2,nmast,ifree,icalcnactdof,
--    index1,index2,m,node,nzs_,ist,kflag,indexe,nope,*mast1=NULL,
-+    index1,index2,m,node,nzs_,ist,kflag,indexe,nope,nring,*mast1=NULL,
-     *irow=NULL,icolumn,nmastboun,mt=mi[1]+1,*next=NULL,nopeold=0,
-     indexeold,identical,jstart,iatleastonenonzero,idof,ndof,*ithread=NULL;
- 
-@@ -434,7 +434,24 @@
- 	}
-       }else continue;
- 
--      for(jj=0;jj<ndof*nope;++jj){
-+      /* SPAX ring x support reduction.  A U3 element's matrix
-+         K_vol = (K V_h) tbar^T sbar is rank one, and tbar (the
-+         unsmoothed edge divergence) has support only on the edge's
-+         own tets -- the RING, written first in the connectivity --
-+         while sbar alone carries the wide E A^c support.  So only the
-+         first nring rows of the element matrix can be nonzero, and the
-+         (support - ring) x (support - ring) block is identically zero.
-+         fbares.py encodes nring in lakon(3:3) ('A' = 1 ... 'Z' = 26);
-+         not allocating that block is what makes c = 1 buildable on a
-+         production cell.  The inner ll loop still spans the whole
-+         support: a ring row couples to every support column. */
-+      nring=nope;
-+      if(strcmp1(&lakon[8*i],"U")==0 && lakon[8*i+1]=='3'){
-+	nring=(ITG)(lakon[8*i+2]-'A')+1;
-+	if(nring<1||nring>nope) nring=nope;
-+      }
-+
-+      for(jj=0;jj<ndof*nring;++jj){
- 	
- 	j=jj/ndof;
- 	k=jj-ndof*j;
 --- mafillsmas.f
 +++ mafillsmas.f
 @@ -57,7 +57,7 @@
@@ -174,82 +137,3 @@ staged there is itself RAM.
  !     
              j=(jj-1)/3+1
              k=jj-3*(j-1)
---- e_c3d_u3.f
-+++ e_c3d_u3.f
-@@ -47,16 +47,25 @@
-       character*8 lakonl,lakon(*)
-       integer mi(*)
-       integer kon(*),ipkon(*),ielmat(mi(3),*),ncmat_,ntmat_,
--     &     nelcon(2,*),nelem,ne,stiffness,i,j,c,d,ii,jj,nope,indexe,
--     &     imat,konl(255),ncyc,nasym
-+     &     nelcon(2,*),nelem,ne,stiffness,i,j,c,d,ii,jj,nope,nring,
-+     &     indexe,imat,konl(255),ncyc,nasym
-       real*8 co(3,*),s(765,765),sm(765,765),ff(765),
-      &     elcon(0:ncmat_,ntmat_,*),
--     &     vh,xkv,sbar(3,255),tbar(3,255)
-+     &     vh,xkv,sbar(3,255),tbar(3,255),tmax
- !
-       character*16 cval
-       integer ilen
- !
-       nope=ichar(lakonl(8:8))
-+!
-+!     The edge ring size travels in lakon(3:3) as LETTERS[nring-1], so that
-+!     mastruct.c and mafillsmas.f can skip the identically-zero outer block of
-+!     K_vol = tbar^T sbar -- tbar is the UNSMOOTHED edge divergence and is
-+!     nonzero only on the ring.  The generator (fbares.py) writes the ring
-+!     first in the connectivity, so rows 1..nring are the ring.
-+!
-+      nring=ichar(lakonl(3:3))-ichar('A')+1
-+      if(nring.lt.1.or.nring.gt.nope) nring=nope
- !
-       if(nope.gt.255) then
-         write(*,*) '*ERROR in e_c3d_u3: edge element ',nelem
-@@ -108,10 +117,45 @@
-      &     nelem,ielmat,elcon,nelcon,mi,ncmat_,ntmat_,imat,ncyc)
-       if(vh.le.0.d0) return
- !
-+!     THE RING ORDERING IS NOT TAKEN ON TRUST.
-+!
-+!     The row loop below stops at nring, so if the generator did not put the
-+!     edge ring first in the connectivity -- or if lakon(3:3) disagrees with
-+!     what it wrote -- real tbar rows would be dropped SILENTLY and the
-+!     volumetric operator would be quietly wrong, in a way no patch test can
-+!     see (a uniform field has nothing for the missing rows to carry).
-+!
-+!     u3vol builds tbar only from the tets that contain the edge, so it MUST
-+!     vanish past nring.  Checking that here costs one pass over the stencil
-+!     and turns the whole class of ordering bugs into a named element number.
-+!
-+      tmax=0.d0
-+      do i=1,nring
-+        do c=1,3
-+          tmax=max(tmax,dabs(tbar(c,i)))
-+        enddo
-+      enddo
-+      do i=nring+1,nope
-+        do c=1,3
-+          if(dabs(tbar(c,i)).gt.1.d-12*tmax) then
-+            write(*,*) '*ERROR in e_c3d_u3: element',nelem
-+            write(*,*) '       lakon(3:3) says the ring is the'
-+            write(*,*) '       first',nring,' nodes, but tbar is'
-+            write(*,*) '       nonzero at position',i,' node',konl(i)
-+            write(*,*) '       Deck and element disagree on the ring:'
-+            write(*,*) '       regenerate with a matching fbares.py'
-+            write(*,*) '       (ring first, nring in the label).'
-+            call exit(201)
-+          endif
-+        enddo
-+      enddo
-+!
- !     K_vol = xkv * tbar^T sbar.  Row index carries the TEST space, column the
--!     TRIAL space; swapping them is the transpose and is wrong.
-+!     TRIAL space; swapping them is the transpose and is wrong.  The row loop
-+!     runs only over the ring (tbar vanishes past nring); the column loop spans
-+!     the whole support, which sbar carries.
- !
--      do i=1,nope
-+      do i=1,nring
-         do c=1,3
-           ii=3*(i-1)+c
-           do j=1,nope
