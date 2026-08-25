@@ -1,0 +1,129 @@
+Make the CalculiX iterative-solver convergence criterion reachable.
+
+ccx's iterative solvers (*STATIC, SOLVER=ITERATIVE CHOLESKY / ITERATIVE
+SCALING) are the only ones whose memory fits a large periodic cell. On a
+167k-equation RVE: 370 MB against SPOOLES' 1275 MB, and 21 s against 23 s.
+
+But out of the box they return the wrong answer, and quietly. The convergence
+test in pcgsolver.c is
+
+    if (k!=1 && (ram<=c1*qam)) break;      /* c1 = 0.005 */
+
+so the iteration stops once the residual max-norm falls to 0.5% of the mean
+load. On an RVE with a ~70x phase contrast that leaves the effective modulus
+0.15% below the direct-solver answer on the same deck -- a number that looks
+entirely reasonable on its own.
+
+c1 is a local constant that no input deck reaches. The `eps` argument threaded
+down from preiter.c LOOKS like the tolerance and is documented as "required
+accuracy" in pcgsolver.c, but it is never read: PCG and CG overwrite it with
+the final residual on exit and return it. Setting it does nothing, which is
+worth knowing before spending an afternoon on it.
+
+This patch reads c1 from CCX_ITER_TOL in both solvers, and the iteration cap
+from CCX_ITER_MAXIT in preiter.c, echoing both. With neither variable set the
+behaviour is byte-for-byte the stock behaviour.
+
+Measured on a 40973-element (167306-equation) brine RVE, against SPOOLES on
+the identical deck:
+
+    CCX_ITER_TOL   iters   wall    peak     E_eff error   equilibrium gap
+    0.005 (stock)     70   14.0s   370 MB      -0.1477%        1.8e-03
+    1e-3              94   14.6s   370 MB      +0.0133%        3.3e-06
+    1e-4             231   17.7s   370 MB      +0.0007%        6.0e-06
+    1e-5             338   20.9s   370 MB      -0.0000%        1.8e-07
+    1e-6             453   23.4s   370 MB      +0.0000%        4.2e-08
+    SPOOLES (direct)   -   23.2s  1275 MB     (reference)      7.4e-08
+
+1e-5 is the recommended setting: it matches the direct solver to five decimal
+places at a third of the memory and no more wall time. Memory is flat in the
+tolerance, as it must be for a conjugate-gradient method -- the cost of
+tightening is iterations, not storage.
+
+The last column is the check that survives into production. It is the
+disagreement between the volume-averaged stress and the reference-point
+reaction -- two independent measurements of the same macroscopic stress -- and
+it tracks the true error without needing a reference solve, so it remains
+available on a cell far too large to solve directly even once. SpaX_PostProcess
+records it per RVE as `equilibrium_gap`.
+
+Apply against a CalculiX 2.23 source tree (this machine has no `patch`; git
+apply does the same job):
+
+    cd <ccx_2.23>
+    git apply -p0 0001-iterative-tolerance.patch     # or: patch -p0 < ...
+    cd src && make -j8
+
+Verified: applying this to pristine 2.23 sources reproduces the built binary's
+sources exactly.
+
+--- src/preiter.c
++++ src/preiter.c
+@@ -26,9 +26,25 @@
+   ITG precFlg,niter=5000000,ndim,i,j,k,ier,*icol=NULL,*irow=NULL,
+     *irow_save=NULL,*icol_save=NULL;
+   double eps=1.e-4,*u=NULL,*au=NULL;
++  char *spax_env;
+ 
+   if(*neq==0) return;
+ 
++  /* SPAX: `eps` is NOT the convergence tolerance despite its name and the
++     comment in pcgsolver.c -- it is overwritten with the final residual on
++     exit and returned. The actual criterion is c1 in pcgsolver.c, patched
++     there to read CCX_ITER_TOL. Only the iteration cap is a genuine input
++     here, and raising it is what a tightened tolerance needs. Echo both so the
++     log records what was used. */
++  if((spax_env=getenv("CCX_ITER_MAXIT"))!=NULL){
++    niter=atoi(spax_env);
++  }
++  {
++    char *tol=getenv("CCX_ITER_TOL");
++    printf(" iterative solver: tolerance %s, iteration cap %" ITGFORMAT "\n",
++           tol!=NULL?tol:"0.005 (default)",niter);
++  }
++
+   /* icol(i) = # subdiagonal nonzeros in column i (i=1,neq)
+      irow(i) = row number of entry i in au (i=1,nzs)
+      ad(i) = diagonal term in column i of the matrix
+--- src/pcgsolver.c
++++ src/pcgsolver.c
+@@ -152,10 +152,21 @@
+   double		alpha=0.0, ekm1=0.0, rrho=0.0;
+   double		rrho1=0.0, gz=0.0, qk=0.0;
+   double          c1=0.005,qam,err,ram=0;
+-  
+-  
++  char            *spax_env;
++
++  /* SPAX: c1 is the convergence criterion -- the iteration stops once the
++     residual max-norm falls below c1 times the mean load, i.e. at 0.5% by
++     default. That is far too loose for periodic homogenisation: it returns an
++     effective modulus 0.15% below the direct-solver answer on the same deck.
++     The `eps` argument is NOT the tolerance (it is overwritten with the final
++     residual on exit and returned), so there was no way to reach this number.
++     Read it from the environment. */
++  if((spax_env=getenv("CCX_ITER_TOL"))!=NULL){
++    c1=atof(spax_env);
++  }
++
+   /*  initialize result and residual vectors  */
+-  
++
+   qam=0.;iam=0;
+   for (i=0; i<neq; i++)
+     {
+@@ -507,6 +518,14 @@
+ 	ITG			i=0, k=0, ncg=0,iam;
+ 	double		ekm1=0.0,c1=0.005,qam,ram=0.,err;
+ 	double		rr=0.0, pz=0.0, qk=0.0, rro=0.0;
++	char		*spax_env;
++
++  /* SPAX: see the note on c1 in PCG above -- same criterion, same default,
++     same reason for making it reachable. This is the unpreconditioned branch
++     (SOLVER=ITERATIVE SCALING). */
++  if((spax_env=getenv("CCX_ITER_TOL"))!=NULL){
++    c1=atof(spax_env);
++  }
+ 
+ 
+   /* solving the system of equations using the iterative solver */

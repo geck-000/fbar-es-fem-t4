@@ -1,0 +1,87 @@
+Raise the user-element matrix to the encoding limit (150 -> 765 DOF), and
+zero it over its real extent.
+
+Two defects, both found by the sphere campaign, both invisible on the
+layered decks that had been the only test.
+
+1. THE CAPACITY WAS STILL TOO SMALL, AND THE NUMBER WAS A GUESS.
+
+Patch 0006 raised the user-element matrix from 60 to 150 DOF (50 nodes)
+on the evidence then available: rings of 4..32 on the sphere cell and
+37, later 40, on the layered campaign cell.  50 nodes looked like ample
+headroom.
+
+It is not.  A U6 patch spans the centre node's whole 1-ring, so its size
+is set by mesh valence and nothing bounds it.  The BSW_L050 sphere cell
+contains a node carried by 248 tets, giving a 127-node ring -- 381 DOF.
+The guard from 0006 fired correctly and stopped the run (at 51 nodes,
+the first patch over the limit), which is the only reason this was a
+clean failure and not another silently corrupted matrix.
+
+The distribution is the point: of 37577 patches, 96% are 11 nodes or
+fewer, ~30 exceed 50, and one reaches 127.  No percentile of a valence
+histogram is a safe bound, so stop picking one.  ccx stores a user
+element's node count in the single label byte lakon(8:8), and
+userelements.f already rejects NODES > 255.  So 255 nodes -- 765 DOF --
+is the largest patch ccx can express at all, and the matrix is now
+dimensioned for exactly that:
+
+  mafillsm.f     nduser 150 -> 765.  su/smu stay ALLOCATABLE, which
+                 matters more at this size than before: 765*765*8 =
+                 4.7 MB each, and a fixed local that large would be
+                 placed in .bss and shared across the assembly threads
+                 (see 0007).  Verified: .bss is still 0 in mafillsm.o,
+                 mafilldmss.o and e_c3d_u6.o.
+  mafilldmss.f   ffu(765), su/smu allocated (765,765).
+  e_c3d_u*.f     s(765,765)/sm(765,765)/ff(765) throughout the family --
+                 u, u1, u4, u5, u6, us3, us45 -- so every callee of
+                 e_c3d_u agrees on the stride.
+  e_c3d_u6.f     the guard is now `nope > 255` and says so: a ring that
+                 trips it cannot be a ccx user element, and the mesh is
+                 what has to change.
+  nodalbbar.py   the same 255 limit, checked at generation, where the
+                 offending node can be named.
+
+Cost is 9.4 MB per assembly thread, paid once per mafillsm call.
+
+2. THE MATRIX WAS ZEROED OVER A FIXED 60, NOT ITS REAL EXTENT.
+
+e_c3d_u6 opened with
+
+      do i=1,60
+        ff(i)=0.d0
+        do j=1,60
+          s(i,j)=0.d0
+        enddo
+      enddo
+
+which was correct when the array was (60,60) and is not correct now.
+The stiffness loop afterwards assigns (not accumulates) the whole
+3*nope square, so s survives; ff does NOT.  e_c3d_u6 never writes ff at
+all, so for any patch wider than 20 nodes, ff(61..3*nope) was whatever
+the previous element left there -- and mafillsm reads ffval=ffu(jj)
+UNCONDITIONALLY, before it tests rhsi.  The caller allocates s/sm/ff
+once and never re-zeroes between elements, so this is live data, not
+zeros.
+
+Layered rings reach 40 and sphere rings 127, so every U6 result taken
+before this fix is suspect and was re-run.
+
+The same two early returns (stiffness.eq.0, va.le.0) leave s itself
+partly stale past row 60.
+
+Fixed by zeroing 1..3*nope, and by zeroing sm as well: e_c3d_u6 is
+static-only and never writes it, so it took sm as an argument (the
+dispatcher in e_c3d_u.f now passes it) rather than leaving mafillsm to
+read an untouched array whenever mass or buckling is on.
+
+VERIFICATION
+
+  * The deck that crashed -- BSW_L050 undrained, 320165 elements,
+    153839 equations, a 127-node ring -- now solves in 12 s with
+    equilibrium_gap 2.2e-07.
+  * Small U6 cases are bit-identical run to run at fixed thread count,
+    so there is no race.  Across thread counts they move by 1-3 units
+    in the last printed digit (~1e-7 relative), which is cond*eps for a
+    K/G = 5000 brine phase under a threaded direct solver's pivot
+    reordering, not a correctness failure.

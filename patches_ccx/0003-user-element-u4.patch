@@ -1,0 +1,61 @@
+Wire the U4 mixed tetrahedron into ccx.
+
+Adds the dispatcher branches and the build entries for the sources in
+elements_ccx/ (e_c3d_u4.f, u4mat.f, resultsmech_u4.f). Inert unless a deck
+declares *USER ELEMENT,TYPE=U4.
+
+--- e_c3d_u.f	2026-08-22 11:20:26.682935314 +0300
++++ e_c3d_u.f	2026-08-22 11:20:26.723431678 +0300
+@@ -88,6 +88,22 @@
+      &       ne0,ipkon,thicke,integerglob,doubleglob,tieset,istartset,
+      &       iendset,ialset,ntie,nasym,ielprop,prop)
+ !        
++      elseif(lakonl(2:2).eq.'4') then
++!
++!       SPAX: U4, mixed displacement/pressure tetrahedron (MINI, P1+bubble/P1)
++!
++        call e_c3d_u4(co,kon,lakonl,p1,p2,omx,bodyfx,nbody,s,sm,
++     &       ff,nelem,nmethod,elcon,nelcon,rhcon,nrhcon,alcon,nalcon,
++     &       alzero,ielmat,ielorien,norien,orab,ntmat_,
++     &       t0,t1,ithermal,vold,iperturb,nelemload,
++     &       sideload,xload,nload,idist,sti,stx,iexpl,plicon,
++     &       nplicon,plkcon,nplkcon,xstiff,npmat_,dtime,
++     &       matname,mi,ncmat_,mass,stiffness,buckling,rhsi,intscheme,
++     &       ttime,time,istep,iinc,coriolis,xloadold,reltime,
++     &       ipompc,nodempc,coefmpc,nmpc,ikmpc,ilmpc,veold,
++     &       ne0,ipkon,thicke,integerglob,doubleglob,tieset,istartset,
++     &       iendset,ialset,ntie,nasym,ielprop,prop)
++!
+       elseif(lakonl(2:4).eq.'S45') then
+         call e_c3d_us45(co,kon,lakonl,p1,p2,omx,bodyfx,nbody,s,sm,
+      &       ff,nelem,nmethod,elcon,nelcon,rhcon,nrhcon,alcon,nalcon,
+--- resultsmech_u.f	2026-08-22 11:20:26.684935397 +0300
++++ resultsmech_u.f	2026-08-22 11:20:26.723807688 +0300
+@@ -68,6 +68,15 @@
+      &        ncmat_,nstate_,stiini,vini,ener,eei,enerini,istep,iinc,
+      &        reltime,calcul_fn,calcul_qa,calcul_cauchy,nener,
+      &        ikin,nal,ne0,thicke,emeini,nelem,ielprop,prop,t0g,t1g)
++      elseif(lakon(nelem)(2:2).eq.'4') then
++!
++!     SPAX: U4 mixed displacement/pressure tetrahedron
++!
++         call resultsmech_u4(co,kon,ipkon,lakon,v,stx,elcon,nelcon,
++     &        rhcon,nrhcon,alcon,nalcon,alzero,ielmat,ielorien,norien,
++     &        orab,ntmat_,t0,t1,ithermal,iperturb,fn,iout,qa,vold,
++     &        nmethod,dtime,plicon,nplicon,plkcon,nplkcon,xstiff,
++     &        npmat_,matname,mi,ncmat_,calcul_fn,calcul_qa,nal,nelem)
+       elseif(lakon(nelem)(2:4).eq.'S45') then
+ !
+ !     user element us45 flat shell element with 4 nodes (5dof)
+--- Makefile.inc	2026-08-22 11:20:50.209913322 +0300
++++ Makefile.inc	2026-08-22 11:20:50.229411865 +0300
+@@ -275,6 +275,9 @@
+ e_c3d_se.f \
+ e_c3d_th.f \
+ e_c3d_u1.f \
++	e_c3d_u4.f \
++	u4mat.f \
++	resultsmech_u4.f \
+ e_c3d_us3.f \
+ e_c3d_us45.f \
+ e_c3d_u.f \

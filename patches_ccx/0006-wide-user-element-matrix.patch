@@ -1,0 +1,38 @@
+Widen the element matrix along the user-element path (60 -> 150 DOF).
+
+mafillsm.f declares s(60,60)/sm(60,60)/ff(60): 20 nodes at 3 DOF.  Every
+standard element fits, so the limit was never stated anywhere -- it is
+implied by the largest stock element (C3D20).
+
+A nodal-averaged B-bar patch (U6) does not have a fixed node count.  It
+spans the centre node's whole 1-ring, so its size follows mesh valence:
+4..32 nodes on the sphere cell here, 37 on the campaign cell.  Past 20
+nodes e_c3d_u6 wrote beyond the end of s, and mafillsm then read the same
+out-of-bounds entries back.  Fortran checks neither, so this produced a
+running binary that silently assembled a corrupted stiffness matrix.
+
+The fix does NOT widen the shared s: mafillsm hands the same array to
+e_c3d, e_c3d_th and ~30 other routines that each declare it (60,60), and
+widening it in one place without the others is a stride mismatch -- the
+same silent-misindex failure in a new spot.  Instead the user-element
+path gets its own arrays:
+
+  mafillsm.f     su/smu/ffu(150), passed to e_c3d_u; the mechanical
+                 assembly loop reads sval/smval/ffval, selected by iuel.
+                 The thermal loop is untouched and still uses s/sm/ff.
+  mafilldmss.f   same wide arrays, then copied back into the stock ones,
+                 refusing (exit 201) anything over 20 nodes rather than
+                 truncating it.
+  e_c3d_u*.f     s/sm/ff widened to (150,150)/(150) throughout the family
+                 -- u1, u4, u5, u6, us3, us45 -- so every callee of
+                 e_c3d_u agrees on the stride.
+  e_c3d_u6.f     hard guard: 3*nope > 150 stops with a message naming the
+                 element and the two places to raise together.
+
+150 = 50 nodes, chosen with headroom over the 37 measured; the guard makes
+overflow loud rather than silent, so the number can be raised safely.
+
+Also in this change:
+  u6patch.f        vol = dabs(xsj)/6 (the generator already used abs)
+  resultsmech_u5/6 nal += 3*nope, matching resultsmech.f:1263
+  e_c3d_u6.f       probe write statements removed
