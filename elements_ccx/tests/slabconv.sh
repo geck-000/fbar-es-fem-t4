@@ -35,8 +35,8 @@ for n in $NS; do
 
   for arm in und/m_ccx drn/m_ccx und_fbar1/m_ccx; do
     j="$ROOT/n$n/$arm"
-    ( cd "$(dirname "$j")" && CCX_FBAR_C=1 SPAX_CCX_REAL=ccx_fbar \
-        SPAX_CCX_MEMMAX=${MEM:-24G} OMP_NUM_THREADS=${NT:-8} \
+    ( cd "$(dirname "$j")" && CCX_FBAR_C=1 FBAR_CCX_REAL=ccx_fbar \
+        FBAR_CCX_MEMMAX=${MEM:-24G} OMP_NUM_THREADS=${NT:-8} \
         ccx_capped "$(basename "$j")" > solve.log 2>&1 ) || true
   done
 done

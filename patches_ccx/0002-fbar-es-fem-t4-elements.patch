@@ -62,7 +62,7 @@ mastruct.c, the user-element EVOL branch in printoutelem.f, and the build.
  !        
 +      elseif(lakonl(2:2).eq.'3') then
 +!
-+!       SPAX: U3, F-barES-FEM-T4 volumetric edge domain.  Its matrix is NOT
++!       F-barES-FEM-T4: U3, F-barES-FEM-T4 volumetric edge domain.  Its matrix is NOT
 +!       symmetric (eq. 17), so it raises nasym and mafillsmas re-assembles it
 +!       in full; mafillsm skips it once nasym is set.
 +!
@@ -71,14 +71,14 @@ mastruct.c, the user-element EVOL branch in printoutelem.f, and the build.
 +!
 +      elseif(lakonl(2:2).eq.'2') then
 +!
-+!       SPAX: U2, F-barES-FEM-T4 deviatoric edge domain (ES-FEM)
++!       F-barES-FEM-T4: U2, F-barES-FEM-T4 deviatoric edge domain (ES-FEM)
 +!
 +        call e_c3d_u2(co,kon,lakonl,s,sm,ff,nelem,elcon,nelcon,
 +     &       ielmat,mi,ncmat_,ntmat_,ipkon,lakon,ne,stiffness)
 +!
 +      elseif(lakonl(2:2).eq.'4') then
 +!
-+!       SPAX: U4, the null base tetrahedron of the F-barES-FEM-T4 element
++!       F-barES-FEM-T4: U4, the null base tetrahedron of the F-barES-FEM-T4 element
 +!
 +        call e_c3d_u4(s,sm,ff,stiffness,mass,buckling,rhsi,coriolis)
 +!
@@ -93,19 +93,19 @@ mastruct.c, the user-element EVOL branch in printoutelem.f, and the build.
       &        ikin,nal,ne0,thicke,emeini,nelem,ielprop,prop,t0g,t1g)
 +      elseif(lakon(nelem)(2:2).eq.'3') then
 +!
-+!     SPAX: U3 F-barES-FEM-T4 volumetric edge domain
++!     F-barES-FEM-T4: U3 F-barES-FEM-T4 volumetric edge domain
 +!
 +         call resultsmech_u3(co,kon,ipkon,lakon,ne,v,elcon,nelcon,
 +     &        ielmat,mi,ncmat_,ntmat_,fn,calcul_fn,nal,nelem)
 +      elseif(lakon(nelem)(2:2).eq.'2') then
 +!
-+!     SPAX: U2 F-barES-FEM-T4 deviatoric edge domain
++!     F-barES-FEM-T4: U2 F-barES-FEM-T4 deviatoric edge domain
 +!
 +         call resultsmech_u2(co,kon,ipkon,lakon,ne,v,elcon,nelcon,
 +     &        ielmat,mi,ncmat_,ntmat_,fn,calcul_fn,nal,nelem)
 +      elseif(lakon(nelem)(2:2).eq.'4') then
 +!
-+!     SPAX: U4 null base tetrahedron of the F-barES-FEM-T4 element
++!     F-barES-FEM-T4: U4 null base tetrahedron of the F-barES-FEM-T4 element
 +!
 +         call resultsmech_u4(fn,calcul_fn,calcul_qa,mi,nelem)
        elseif(lakon(nelem)(2:4).eq.'S45') then
@@ -120,7 +120,7 @@ mastruct.c, the user-element EVOL branch in printoutelem.f, and the build.
 -      if(lakon(nelem)(1:5).eq.'C3D8I') then
 +      if(lakon(nelem)(1:1).eq.'U') then
 +!
-+!        SPAX: user element. Its label carries ndof in position 7 and the
++!        F-barES-FEM-T4: user element. Its label carries ndof in position 7 and the
 +!        node count in position 8 (allocation.f). Without this branch the
 +!        position-4 tests below all miss -- position 4 of 'U4' is blank --
 +!        so nope and mint3d stay 0 and EVOL prints ZERO VOLUME for every
@@ -184,7 +184,7 @@ mastruct.c, the user-element EVOL branch in printoutelem.f, and the build.
 -	       number of nodes: 8th entry of label */
 +	       number of nodes: 8th entry of label
 +
-+	       SPAX: the (unsigned char) cast is load-bearing.  lakon is
++	       F-barES-FEM-T4: the (unsigned char) cast is load-bearing.  lakon is
 +	       char*, char is SIGNED on x86-64, and the node count is one
 +	       byte -- so a user element of more than 127 nodes was read
 +	       here as a NEGATIVE nope and got no matrix structure at all.
@@ -228,7 +228,7 @@ mastruct.c, the user-element EVOL branch in printoutelem.f, and the build.
 -      
 -      for(jj=0;jj<ndof*nope;++jj){
 +
-+      /* SPAX ring x support reduction.  A U3 element's matrix
++      /* F-barES-FEM-T4 ring x support reduction.  A U3 element's matrix
 +         K_vol = (K V_h) tbar^T sbar is rank one, and tbar (the
 +         unsmoothed edge divergence) has support only on the edge's
 +         own tets -- the RING, written first in the connectivity --

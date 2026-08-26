@@ -18,7 +18,7 @@
 !
       subroutine e_c3d_u4(s,sm,ff,stiffness,mass,buckling,rhsi,coriolis)
 !
-!     SPAX: U4 -- the null base tetrahedron of the F-barES-FEM-T4 element.
+!     F-barES-FEM-T4: U4 -- the null base tetrahedron of the F-barES-FEM-T4 element.
 !
 !     The base tets of an F-bar deck are retyped to U4 so that the U2
 !     (deviatoric) and U3 (volumetric) smoothing domains can read their

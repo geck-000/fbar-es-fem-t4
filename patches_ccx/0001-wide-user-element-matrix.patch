@@ -13,7 +13,7 @@ user-element path its own arrays sized to the encoding limit (255 nodes,
       &     pslavsurf(3,*),pmastsurf(6,*),smscale(*),aut(*),val,
       &     aute(96)
 +!
-+!     SPAX: wide element matrix for the user-element path.  The F-bar
++!     F-barES-FEM-T4: wide element matrix for the user-element path.  The F-bar
 +!     volumetric element U3 spans the support of E A^c, so its DOF count
 +!     is set by mesh valence, not by a fixed node count: 30-40 nodes is
 +!     routine in an unstructured tet mesh.  The stock s(60,60) holds 20
@@ -43,7 +43,7 @@ user-element path its own arrays sized to the encoding limit (255 nodes,
              ndof=3
            elseif(lakon(i)(1:1).eq.'U') then
 +!
-+!     SPAX: U3, the F-barES-FEM-T4 volumetric edge domain, has a
++!     F-barES-FEM-T4: U3, the F-barES-FEM-T4 volumetric edge domain, has a
 +!     NON-SYMMETRIC element matrix (eq. 17).  The assembly below walks only
 +!     the upper triangle (do ll=jj,...) into symmetric storage, which would
 +!     silently symmetrise it.  When nasym is set -- linstatic/nonlingeo set
@@ -79,7 +79,7 @@ user-element path its own arrays sized to the encoding limit (255 nodes,
                node2=kon(indexe+l)
                jdof2=nactdof(m,node2)
 +!
-+!     SPAX: user elements were assembled into the wide su/smu.
++!     F-barES-FEM-T4: user elements were assembled into the wide su/smu.
 +!
 +              if(iuel.eq.1) then
 +                sval=su(jj,ll)
@@ -249,7 +249,7 @@ user-element path its own arrays sized to the encoding limit (255 nodes,
       &           iendset,ialset,ntie,nasym,
       &           ielprop,prop,nope)
 +!
-+!     SPAX: this damping path assembles from the stock s/sm/ff, which
++!     F-barES-FEM-T4: this damping path assembles from the stock s/sm/ff, which
 +!     hold 20 nodes.  A large U3 volumetric stencil cannot be represented
 +!     here, so refuse rather than silently truncating it.
 +!

@@ -1,4 +1,4 @@
-/*     SPAX: a pthread mutex for the F-barES-FEM-T4 node->element map.
+/*     F-barES-FEM-T4: a pthread mutex for the F-barES-FEM-T4 node->element map.
  *
  *     ccx parallelises with pthreads and compiles the Fortran WITHOUT
  *     -fopenmp (see FFLAGS), so every !$omp directive in a .f file is an

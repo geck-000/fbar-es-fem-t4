@@ -211,7 +211,7 @@ def main():
     ap.add_argument('--cycles', type=int,
                     default=int(os.environ.get('CCX_FBAR_C', 1)),
                     help='c, the number of cyclic smoothings of J, eq. (6)-(7)')
-    ap.add_argument('--solver', default=os.environ.get('SPAX_FBAR_SOLVER',
+    ap.add_argument('--solver', default=os.environ.get('FBAR_SOLVER',
                                                        'PARDISO'))
     a = ap.parse_args()
 
@@ -398,7 +398,7 @@ def main():
             # if the deck has none.
             drop = u.startswith('*ELPRINT') or u.startswith('*ELFILE')
             if drop:
-                out.append('** SPAX fbares: dropped '
+                out.append('** FBAR fbares: dropped '
                            + ln.split(',')[0].strip()
                            + ' -- no element in an F-bar deck carries stress')
                 continue
@@ -433,7 +433,7 @@ def main():
                 # interleaving them puts a multi-line element's continuation
                 # at a chain boundary, where ccx reads it as a fresh element
                 # and reports 'element N is already defined'.
-                out.append('** SPAX F-barES-FEM-T4(c=%d): %d edge domains'
+                out.append('** FBAR F-barES-FEM-T4(c=%d): %d edge domains'
                            % (a.cycles, sum(len(u2[e]) for e in sets)))
                 for k in sorted(groups):
                     out.append('*USER ELEMENT,TYPE=%s%s,NODES=%d,'

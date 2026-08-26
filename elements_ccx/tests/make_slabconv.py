@@ -149,10 +149,9 @@ def main():
         # INTERIOR NODES ONLY.  mesh_box displaces boundary nodes too (in
         # matched periodic pairs), but these decks select faces by coordinate,
         # so a displaced boundary node is no longer ON the face and never gets
-        # constrained -- which silently unrestrains the cell.  make_block.py
-        # carries the same restriction for the same reason.  Distorting the
+        # constrained -- which silently unrestrains the cell.  Distorting the
         # interior is what the test needs anyway.
-        qmin = float(os.environ.get('SPAX_BLOCK_QMIN', 0.15))
+        qmin = float(os.environ.get('FBAR_BLOCK_QMIN', 0.15))
         rng = np.random.default_rng(11)
         tol0 = 1e-12
         inter = ~((nodes <= tol0) | (nodes >= 1.0 - tol0)).any(axis=1)

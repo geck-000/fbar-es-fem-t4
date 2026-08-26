@@ -18,7 +18,7 @@
 !
       subroutine resultsmech_u4(fn,calcul_fn,calcul_qa,mi,nelem)
 !
-!     SPAX: U4 -- the null base tetrahedron of the F-barES-FEM-T4 element.
+!     F-barES-FEM-T4: U4 -- the null base tetrahedron of the F-barES-FEM-T4 element.
 !
 !     U4 contributes no internal force, so its nodal-force block is zeroed;
 !     no stress is written.

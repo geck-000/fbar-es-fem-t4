@@ -1,5 +1,5 @@
 !
-!     SPAX: U2 -- edge-based smoothed DEVIATORIC stiffness (ES-FEM-T4).
+!     F-barES-FEM-T4: U2 -- edge-based smoothed DEVIATORIC stiffness (ES-FEM-T4).
 !
 !     The deviatoric half of F-barES-FEM-T4 [Onishi, Iida & Amaya, Int. J.
 !     Comput. Methods 15(7) 1845003 (2018)].  One element per edge smoothing

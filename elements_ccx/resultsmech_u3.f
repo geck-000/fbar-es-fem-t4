@@ -1,5 +1,5 @@
 !
-!     SPAX: internal forces for U3, the F-barES-FEM-T4 volumetric domain.
+!     F-barES-FEM-T4: internal forces for U3, the F-barES-FEM-T4 volumetric domain.
 !
 !     f_(i,c) = (K V_h) * tbar(c,i) * thetabar,   thetabar = sbar . u
 !

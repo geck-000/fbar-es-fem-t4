@@ -1,5 +1,5 @@
 !
-!     SPAX: internal forces for U2, the ES-FEM deviatoric smoothing domain.
+!     F-barES-FEM-T4: internal forces for U2, the ES-FEM deviatoric smoothing domain.
 !
 !     f_(i,c) = V_h * sum_a gt(a,i) * sig_(c,a),  sig = 2 mu dev(sym(grad u))
 !

@@ -1,5 +1,5 @@
 !
-!     SPAX: U3 -- edge-based smoothed VOLUMETRIC stiffness, F-barES-FEM-T4.
+!     F-barES-FEM-T4: U3 -- edge-based smoothed VOLUMETRIC stiffness, F-barES-FEM-T4.
 !
 !     The volumetric half of the method [Onishi, Iida & Amaya, Int. J. Comput.
 !     Methods 15(7) 1845003 (2018)], eqs. (6)-(11) and (17).  One element per

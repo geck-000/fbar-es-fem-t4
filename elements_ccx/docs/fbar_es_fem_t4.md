@@ -205,7 +205,7 @@ The reading ambiguity in eq. (6) — the input to the first cycle is written
 `ᵉJ̃`, with the tilde the paper otherwise reserves for smoothed quantities, so
 it is either the raw element Jacobian `det(ᵉF)` or an element restriction of
 the already edge-smoothed `ᵸJ̃` — is implemented both ways and switchable with
-`SPAX_FBAR_JIN=elem|edge`.  It changes the numbers by a few per cent and
+`FBAR_JIN=elem|edge`.  It changes the numbers by a few per cent and
 changes no conclusion below.  `elem` is the default.
 
 ## 7. What it does, measured
@@ -221,8 +221,7 @@ neighbours, so the mesh was not a partition of the cell.  On that mesh nothing
 passes its own patch test — C3D4 included, at `fluc` 1.4e-3 with a residual of
 0.21 against the exact affine field, at interior nodes.  `mesh_box` now shrinks
 the jitter amplitude until no tet is inverted and the worst is at least
-`SPAX_MESH_QMIN` (0.15) of the mean, the same guard `make_block.py` has carried
-since the acceptance suite hit this.  Every number below is remeasured.
+`FBAR_MESH_QMIN` (0.15) of the mean.  Every number below is remeasured.
 
 Brine sphere `r = 0.30` in ice, periodic cell, requested jitter 0.3 (shrunk to
 0.64 of that at `n = 8` by the quality guard), `n = 8`.  `fluc` is max
@@ -497,10 +496,10 @@ scored to a tenth of a percent against it.
 
 ### What CAN be checked, and is
 
-Our own points do not have the packing problem. `params/rve_layermesh.csv`
-rows `LMESH_m0p0240_und_s1` and `LMESH_m0p0120_und_s1` differ **only** in
-`run_id` and `L_mesh`; with `SPAX_SEED` fixed the packing is identical and
-only h changes, and the drained twin is the same mesh with one elastic card
+Our own points do not have the packing problem. `make_slabconv.py` rebuilds the
+same cell at every mesh size -- the slab faces and bridge edges are fixed at
+multiples of 0.1, so every phase boundary lands on a mesh plane for any `n`
+multiple of 10 -- and the drained twin is the same mesh with one elastic card
 rewritten. So a CalculiX mesh sweep carries no packing noise at all, and it
 is the one thing here that can answer whether R varies smoothly.
 
@@ -515,7 +514,7 @@ Over the two points available, the arms already separate by DIRECTION:
 The two arms that unlock are the two that move toward the region Abaqus's fine
 meshes occupy; C3D4 moves away from it and `c = 0` does not move at all. Two
 points cannot show convergence either, which is why
-`elements_ccx/tests/meshconv.sh` fills in intermediate `L_mesh` values on the
+`elements_ccx/tests/meshconv.sh` fills in intermediate element counts on the
 same geometry.
 
 **The finer end is out of reach for `c = 1`.** `0.0080` is 3.4x the elements of
@@ -617,10 +616,10 @@ crash. Raising it needs a `long long` ITG build *and* more RAM than this
 machine has, or the direct global assembly route of section 8.
 
 **How E_x is read.** An F-bar deck carries no element stress, so `sigma_bar`
-comes from the reference-point reaction alone
-(`SPAX_CCX_SIGMA_FROM_RF=1` in `SpaX_CalculiX.py`) — the other of the two
-independent measurements the campaign normally cross-checks against each
-other, and the one Abaqus's macroscopic modulus is defined by. The
+comes from the reference-point reaction alone (`FBAR_CCX_SIGMA_FROM_RF=1`) —
+the other of the two independent measurements the campaign normally
+cross-checks against each other, and the one Abaqus's macroscopic modulus is
+defined by. The
 `equilibrium_gap` column is therefore empty for these arms by construction.
 What stands in for it: on `m0p0240` the transverse reference points came back
 with reactions of 2.7e-07 against 1.5e+07 at the driven one — traction-free

@@ -98,9 +98,9 @@ def mesh_box(n, slab_lo, slab_hi, jitter=0.0, seed=7, geom=None):
         # then fails its own patch test (measured: fluc 1.4e-3 and a residual
         # of 0.21 against the exact affine field, at interior nodes).
         # Shrink the amplitude until no tet is inverted and the worst is still
-        # a reasonable fraction of the mean, exactly as make_block.py does.
+        # a reasonable fraction of the mean.
         base = nodes.copy()
-        amp, qmin = 1.0, float(os.environ.get('SPAX_MESH_QMIN', 0.15))
+        amp, qmin = 1.0, float(os.environ.get('FBAR_MESH_QMIN', 0.15))
         for _ in range(40):
             nodes = base + amp * d[inv]
             p4 = nodes[_tets_of(n)]
@@ -401,12 +401,12 @@ def assemble(scheme, nodes, tets, mat, g, vol, faces, patch, props,
             Gtrial = (Svol @ Ddiv).tocsr()
             Gtest = (Edev @ Ddiv).tocsr()
             W = sp.diags(K * Vh)
-            # SPAX_FBAR_SYM=1 assembles the Galerkin form Bbar^T D Bbar
+            # FBAR_SYM=1 assembles the Galerkin form Bbar^T D Bbar
             # instead.  That is NOT what eq. (17) specifies, but it is
             # symmetric, and ccx calls PARDISO with mtype = -2 -- so whether
             # the difference is measurable decides whether a CalculiX port has
             # to touch the solver path at all.  Measured, not assumed.
-            if os.environ.get('SPAX_FBAR_SYM') == '1':
+            if os.environ.get('FBAR_SYM') == '1':
                 Gtest = Gtrial
             Kv = (Gtest.T @ W @ Gtrial).tocoo()
             A.r.append(Kv.row); A.c.append(Kv.col); A.v.append(Kv.data)
@@ -711,9 +711,9 @@ def fbar_es_operators(nodes, tets, mat, g, vol, cycles, m, jinput=None):
                 J of eq. (5), which is what Fig. 1's ordering ('use
                 ES-FEM once ... then use NS-FEM c times') suggests.
                 S = E A^c R E.
-    Defaults to SPAX_FBAR_JIN, itself defaulting to 'elem'.
+    Defaults to FBAR_JIN, itself defaulting to 'elem'.
     """
-    jinput = jinput or os.environ.get('SPAX_FBAR_JIN', 'elem')
+    jinput = jinput or os.environ.get('FBAR_JIN', 'elem')
     import scipy.sparse as _sp
     sel = np.flatnonzero(mat == m)
     idx = {e: i for i, e in enumerate(sel)}

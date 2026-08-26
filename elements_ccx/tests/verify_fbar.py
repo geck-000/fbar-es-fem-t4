@@ -53,12 +53,12 @@ for jin in ('elem', 'edge'):
 print('\nV2  patch test, homogeneous block, exact C1111 = K + 4G/3')
 exact = ice[0] + 4.0 * ice[1] / 3.0
 for jin in ('elem', 'edge'):
-    os.environ['SPAX_FBAR_JIN'] = jin
+    os.environ['FBAR_JIN'] = jin
     for c in (0, 1, 2, 3):
         r = P.run('fbar_%d' % c, 4, (2.0, 3.0), {0: ice, 1: ice}, jitter=0.0)
         chk('%s fbar_%d  rel err in C1111' % (jin, c),
             abs(r[0] / exact - 1), 0.0, 1e-10)
-os.environ['SPAX_FBAR_JIN'] = 'elem'
+os.environ['FBAR_JIN'] = 'elem'
 
 print('\nV3  c = 0 must reproduce selective ES-FEM-T4 exactly (S = E)')
 sel, idx, ek, ed, Vh, E, S, R = P.fbar_es_operators(

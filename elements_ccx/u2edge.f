@@ -1,5 +1,5 @@
 !
-!     SPAX: U2 -- the edge-based (ES-FEM) DEVIATORIC smoothing domain.
+!     F-barES-FEM-T4: U2 -- the edge-based (ES-FEM) DEVIATORIC smoothing domain.
 !
 !     U2 is the deviatoric and U3 the volumetric smoothing domain of the
 !     F-barES-FEM-T4 element; U4 is the null base tetrahedron whose only

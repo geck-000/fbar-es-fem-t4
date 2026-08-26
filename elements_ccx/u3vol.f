@@ -1,5 +1,5 @@
 !
-!     SPAX: U3 -- the F-barES-FEM-T4 VOLUMETRIC smoothing chain, eqs. (6)-(11).
+!     F-barES-FEM-T4: U3 -- the F-barES-FEM-T4 VOLUMETRIC smoothing chain, eqs. (6)-(11).
 !
 !     U3 is the volumetric smoothing domain of the F-barES-FEM-T4 element
 !     (U2 the deviatoric, U4 the null base tetrahedron).

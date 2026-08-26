@@ -92,7 +92,7 @@ VERIFICATION
       &     neam,nebm,neat,nebt,ikmpc(*),nset,islavquadel(1),irowt1(1),
       &     jqt1(1),mortartrafoflag,mscalmethod
 +!
-+!     SPAX: the user-element path needs its own wide arrays.  s/sm here are
++!     F-barES-FEM-T4: the user-element path needs its own wide arrays.  s/sm here are
 +!     (60,60) and are shared with e_c3d and e_c3d_th, so widening them would
 +!     be a stride mismatch -- patch 0006 records that exact failure.  su/smu
 +!     are ALLOCATABLE, not fixed locals: 765*765*8 = 4.7 MB each would land
@@ -110,7 +110,7 @@ VERIFICATION
  !     only contact friction
  !     
 +!
-+!     SPAX: size the user-element arrays for this thread's element range.
++!     F-barES-FEM-T4: size the user-element arrays for this thread's element range.
 +!
 +        iuany=0
 +        do i=neam,nebm
@@ -131,7 +131,7 @@ VERIFICATION
            if(ipkon(i).lt.0) cycle
 +          iuel=0
 +!
-+!     SPAX: U3 -- the F-barES-FEM-T4 volumetric edge domain.
++!     F-barES-FEM-T4: U3 -- the F-barES-FEM-T4 volumetric edge domain.
 +!
 +!     K_vol = (K V_h) tbar^T sbar is rank one and NOT symmetric: eq. (17) of
 +!     Onishi, Iida & Amaya pairs the stress from the modified gradient F-bar
@@ -167,7 +167,7 @@ VERIFICATION
                node2=kon(indexe+l)
                jdof2=nactdof(m,node2)
 +!
-+!     SPAX: user elements were assembled into the wide su.
++!     F-barES-FEM-T4: user elements were assembled into the wide su.
 +!
 +              if(iuel.eq.1) then
 +                sval=su(jj,ll)
@@ -235,7 +235,7 @@ VERIFICATION
    NNEW(nebparm,ITG,num_cpus);
  
 -  if(nec>0){
-+  /* SPAX: is there a U3 (F-barES-FEM-T4 volumetric edge domain) in the
++  /* F-barES-FEM-T4: is there a U3 (F-barES-FEM-T4 volumetric edge domain) in the
 +     model?
 +
 +     Stock ccx has exactly one asymmetric MECHANICAL contribution -- friction
@@ -273,7 +273,7 @@ VERIFICATION
  	  DOUMEMSET(fnext,0,mt**nk,0.);
  	}
  
-+	/* SPAX: U3 (F-barES-FEM-T4 volumetric) has a non-symmetric element
++	/* F-barES-FEM-T4: U3 (F-barES-FEM-T4 volumetric) has a non-symmetric element
 +	   matrix by construction (eq. 17).  nasym must be known BEFORE
 +	   mafillsm, which walks only the upper triangle of the element
 +	   matrix; see the same block in linstatic.c. */
@@ -291,7 +291,7 @@ VERIFICATION
  	  
    }
  
-+  /* SPAX: U3 (F-barES-FEM-T4 volumetric) has a non-symmetric element matrix
++  /* F-barES-FEM-T4: U3 (F-barES-FEM-T4 volumetric) has a non-symmetric element matrix
 +     by construction -- eq. (17) of Onishi, Iida & Amaya pairs the stress from
 +     the modified gradient with the virtual work of the unmodified one.
 +
