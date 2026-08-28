@@ -6,6 +6,12 @@ enough only for the largest stock element (C3D20).  This patch gives the
 user-element path its own arrays sized to the encoding limit (255 nodes,
 765 DOF), so U3 at c = 1 fits.
 
+It also adds the two arguments `lakon, ne` to the e_c3d_u call sites, which
+the F-barES-FEM-T4 elements need to walk their base-U4 node->element map
+(see the 0002 element-wiring patch): without them every argument after
+position 14 in e_c3d_u shifts by two, so ntmat_ arrives NULL and the
+assembly segfaults on the first U2 element.
+
 --- mafillsm.f
 +++ mafillsm.f
 @@ -78,7 +78,29 @@
@@ -63,7 +69,7 @@ user-element path its own arrays sized to the encoding limit (255 nodes,
              call e_c3d(co,kon,lakon(i),p1,p2,om,bodyf,nbody,s,sm,ff,i,
       &           nmethod,elcon,nelcon,rhcon,nrhcon,alcon,nalcon,
       &           alzero,ielmat,ielorien,norien,orab,ntmat_,
-@@ -299,7 +332,9 @@
+@@ -299,7 +332,10 @@
       &           set,nset,islavquadel,aute,irowte,jqte,
       &           mortartrafoflag)
            else
@@ -71,10 +77,11 @@ user-element path its own arrays sized to the encoding limit (255 nodes,
 +            iuel=1
 +            call e_c3d_u(co,kon,lakon(i),p1,p2,om,bodyf,nbody,
 +     &           su,smu,ffu,i,
-      &           lakon,ne,
++     &           lakon,ne,
       &           nmethod,elcon,nelcon,rhcon,nrhcon,alcon,nalcon,
       &           alzero,ielmat,ielorien,norien,orab,ntmat_,
-@@ -376,9 +411,19 @@
+      &           t0,t1,ithermal,vold,iperturb,nelemload,sideload,xload,
+@@ -375,9 +411,19 @@
  !     
                node2=kon(indexe+l)
                jdof2=nactdof(m,node2)
@@ -96,7 +103,7 @@ user-element path its own arrays sized to the encoding limit (255 nodes,
  c              endif
  c 100          format(i10,",",i5,",",i10,",",i5,",",e20.13)
  !     
-@@ -387,10 +432,10 @@
+@@ -386,10 +432,10 @@
                if((jdof1.gt.0).and.(jdof2.gt.0)) then
                  if(stiffonly(1).eq.1) then
                    call add_sm_st(au,ad,jq,irow,jdof1,jdof2,
@@ -109,7 +116,7 @@ user-element path its own arrays sized to the encoding limit (255 nodes,
                  endif
                elseif((jdof1.gt.0).or.(jdof2.gt.0)) then
  !     
-@@ -415,14 +460,14 @@
+@@ -414,14 +460,14 @@
                      if(index.eq.0) cycle
                      do
                        idof2=nactdof(nodempc(2,index),nodempc(1,index))
@@ -126,7 +133,7 @@ user-element path its own arrays sized to the encoding limit (255 nodes,
       &                         coefmpc(ist)
  !     
                            if(idof1.eq.idof2) valu2=2.d0*valu2
-@@ -447,7 +492,7 @@
+@@ -446,7 +492,7 @@
  !     
                  if(rhsi.eq.1) then
                  elseif(nmethod.eq.2) then
@@ -135,7 +142,7 @@ user-element path its own arrays sized to the encoding limit (255 nodes,
                    icolumn=neq(2)-idof2/2
                    call add_bo_st(au,jq,irow,idof1,icolumn,value)
                  endif
-@@ -478,14 +523,14 @@
+@@ -477,14 +523,14 @@
                          idof2=nactdof(nodempc(2,index2),
       &                       nodempc(1,index2))
                          value=coefmpc(index1)*coefmpc(index2)*
@@ -152,7 +159,7 @@ user-element path its own arrays sized to the encoding limit (255 nodes,
                              call add_sm_ei(au,ad,aub,adb,jq,
       &                           irow,idof1,idof2,value,valu2,i0,i0)
                            endif
-@@ -535,7 +580,7 @@
+@@ -534,7 +580,7 @@
                          idof2=nactdof(nodempc(2,index2),
       &                       nodempc(1,index2))
                          value=coefmpc(index1)*coefmpc(index2)*
@@ -161,7 +168,7 @@ user-element path its own arrays sized to the encoding limit (255 nodes,
                          if(idof1.eq.idof2) value=2.d0*value
                          if((idof1.gt.0).and.(idof2.gt.0)) then
                            if(stiffonly(1).eq.1) then
-@@ -543,7 +588,7 @@
+@@ -542,7 +588,7 @@
       &                           idof1,idof2,value,i0,i0)
                            else
                              valu2=coefmpc(index1)*coefmpc(index2)*
@@ -170,7 +177,7 @@ user-element path its own arrays sized to the encoding limit (255 nodes,
  !     
                              if(idof1.eq.idof2) valu2=2.d0*valu2
  !     
-@@ -577,6 +622,11 @@
+@@ -576,6 +622,11 @@
                endif
              enddo
  !     
@@ -182,7 +189,7 @@ user-element path its own arrays sized to the encoding limit (255 nodes,
              if(rhsi.eq.1) then
  !     
  !     distributed forces
-@@ -586,7 +636,7 @@
+@@ -585,7 +636,7 @@
  !     updating the external force vector for dynamic
  !     calculations
  !     
@@ -191,7 +198,7 @@ user-element path its own arrays sized to the encoding limit (255 nodes,
  !     
                  if(jdof1.le.0) then
                    if(nmpc.ne.0) then
-@@ -600,7 +650,7 @@
+@@ -599,7 +650,7 @@
       &                       nodempc(1,index))
                          if(jdof1.gt.0) then
                            fext(jdof1)=fext(jdof1)
@@ -200,7 +207,7 @@ user-element path its own arrays sized to the encoding limit (255 nodes,
       &                         /coefmpc(ist)
                          endif
                          index=nodempc(3,index)
-@@ -610,7 +660,7 @@
+@@ -609,7 +660,7 @@
                    endif
                    cycle
                  endif
@@ -240,7 +247,7 @@ user-element path its own arrays sized to the encoding limit (255 nodes,
 -            call e_c3d_u(co,kon,lakon(i),p1,p2,om,bodyf,nbody,s,sm,
 -     &           ff,i,nmethod,elcon,nelcon,rhcon,nrhcon,alcon,nalcon,
 +            call e_c3d_u(co,kon,lakon(i),p1,p2,om,bodyf,nbody,su,smu,
-+     &           ffu,i,nmethod,elcon,nelcon,rhcon,nrhcon,alcon,nalcon,
++     &           ffu,i,lakon,ne,nmethod,elcon,nelcon,rhcon,nrhcon,alcon,nalcon,
       &           alzero,ielmat,ielorien,norien,orab,ntmat_,
       &           t0,t1,ithermal,vold,iperturb,nelemload,sideload,xload,
       &           nload,idist,sti,stx,iexpl,plicon,
