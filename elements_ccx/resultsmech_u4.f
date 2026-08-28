@@ -20,20 +20,18 @@
 !
 !     F-barES-FEM-T4: U4 -- the null base tetrahedron of the F-barES-FEM-T4 element.
 !
-!     U4 contributes no internal force, so its nodal-force block is zeroed;
-!     no stress is written.
+!     U4 carries no stiffness (e_c3d_u4 zeroes its 12-DOF block) and so
+!     contributes no internal force.  fn is already zeroed by resultsini
+!     before the stress pass, so there is nothing to do here: the previous
+!     version wrote fn(i,nelem)=0 with nelem the ELEMENT index into fn's
+!     NODE-indexed second dimension, which overflows fn whenever the element
+!     count exceeds the node count and segfaults in the stress pass.
 !
       implicit none
 !
-      integer calcul_fn,calcul_qa,mi(*),nelem,i
+      integer calcul_fn,calcul_qa,mi(*),nelem
 !
       real*8 fn(0:mi(2),*)
-!
-      if(calcul_fn.eq.1) then
-         do i=0,mi(2)
-            fn(i,nelem)=0.d0
-         enddo
-      endif
 !
       return
       end
