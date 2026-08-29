@@ -81,7 +81,7 @@ INS_LIMIT = 2 ** 31
 NAMES = [a + b for a in LETTERS for b in LETTERS]
 
 
-def final_structure(u2, u3, tets):
+def final_structure(u2, u3, tcn):
     """Exact number of distinct off-diagonal (dof,dof) pairs the matrix
     structure ends up holding.
 
@@ -119,8 +119,7 @@ def final_structure(u2, u3, tets):
         supp_n.append(sidx.astype(np.int64, copy=False))
         h += ne
 
-    T = np.asarray(list(tets.values()), dtype=np.int64) if tets else \
-        np.empty((0, 4), dtype=np.int64)
+    T = tcn
 
     nn = 1
     for a in (supp_n, ring_n):
@@ -161,20 +160,34 @@ def final_structure(u2, u3, tets):
     return int(9 * noff + 3 * ndiag)
 
 
+def _rstrip_lines(path):
+    """The source deck line by line, newline stripped, without ever holding
+    all of it -- read().splitlines() on a 400 MB deck is ~0.7 GB of str."""
+    with open(path) as f:
+        for ln in f:
+            yield ln.rstrip('\n').rstrip('\r')
+
+
 def iskw(line):
     s = line.lstrip()
     return s.startswith('*') and not s.startswith('**')
 
 
 def parse(path):
-    """tets, elset membership, elset -> material, material -> (E, nu).
+    """tet ids, tet connectivity, elset membership, elset -> material,
+    material -> (E, nu).
 
     Coordinates are deliberately NOT kept: the stencils are pure connectivity
     and nothing downstream reads a node position, so holding them costs a few
     hundred MB on a fine cell for nothing.
+
+    The elements come back as two packed arrays -- ids (n,) and connectivity
+    (n, 4) -- rather than a dict of tuples.  On the 0.0060 cell that dict is
+    ~2.7M boxed ids and ~11M boxed node numbers, several GB, to carry data
+    that fits in 100 MB flat.
     """
-    tets = {}
-    elset_of, mat_of, elastic = defaultdict(list), {}, {}
+    tid, tcn = array('q'), array('q')
+    elset_of, mat_of, elastic = defaultdict(lambda: array('q')), {}, {}
     mode, cur, curmat = None, None, None
     for ln in open(path):
         s = ln.strip()
@@ -209,12 +222,21 @@ def parse(path):
             continue
         f = [x.strip() for x in s.split(',') if x.strip()]
         if mode == 'e' and len(f) >= 5:
-            tets[int(f[0])] = tuple(int(x) for x in f[1:5])
-            elset_of[cur].append(int(f[0]))
+            e = int(f[0])
+            tid.append(e)
+            tcn.append(int(f[1]))
+            tcn.append(int(f[2]))
+            tcn.append(int(f[3]))
+            tcn.append(int(f[4]))
+            elset_of[cur].append(e)
         elif mode == 'el' and curmat and len(f) >= 2:
             elastic.setdefault(curmat, (float(f[0]), float(f[1])))
             mode = None
-    return tets, elset_of, mat_of, elastic
+    tid = np.frombuffer(tid, dtype=np.int64).copy()
+    tcn = np.frombuffer(tcn, dtype=np.int64).copy().reshape(-1, 4)
+    elset_of = {k: np.frombuffer(v, dtype=np.int64).copy()
+                for k, v in elset_of.items()}
+    return tid, tcn, elset_of, mat_of, elastic
 
 
 def stencils(conn, ncyc, chunk=20000):
@@ -329,7 +351,7 @@ def main():
                          'never materialises.')
     a = ap.parse_args()
 
-    tets, elset_of, mat_of, elastic = parse(a.src)
+    tid, tcn, elset_of, mat_of, elastic = parse(a.src)
     sets = a.elset or sorted(elset_of)
     for es in sets:
         if es not in elset_of:
@@ -341,8 +363,9 @@ def main():
     if a.cycles < 0 or a.cycles > 3:
         raise SystemExit('fbares: --cycles must be 0..3')
 
-    lines = open(a.src).read().splitlines()
-    maxel = max(tets) if tets else 0
+    maxel = int(tid.max()) if tid.size else 0
+    tid_order = np.argsort(tid)
+    tid_sorted = tid[tid_order]
 
     # --- build the stencils, per material -------------------------------
     #
@@ -354,24 +377,28 @@ def main():
     u2, u3 = {}, {}
     stats = {}
     for es in sets:
-        ids = sorted(elset_of[es])
-        loc = {}
-        conn = np.empty((len(ids), 4), dtype=np.int64)
-        for i, e in enumerate(ids):
-            for j, n in enumerate(tets[e]):
-                if n not in loc:
-                    loc[n] = len(loc)
-                conn[i, j] = loc[n]
-        back = np.empty(len(loc), dtype=np.int64)
-        for n, i in loc.items():
-            back[i] = n
+        # local numbering is FIRST-ENCOUNTER, walking elements in ascending
+        # id and nodes in connectivity order -- np.unique(return_index) gives
+        # each value's first position, so sorting by that reproduces it
+        # exactly, without the dict or the 4*ne interpreter iterations.
+        ids = np.sort(elset_of[es])
+        raw = tcn[tid_order[np.searchsorted(tid_sorted, ids)]]
+        flat = raw.ravel()
+        uniq, first, inv = np.unique(flat, return_index=True,
+                                     return_inverse=True)
+        o = np.argsort(first)
+        back = uniq[o]
+        rank = np.empty(uniq.size, dtype=np.int64)
+        rank[o] = np.arange(uniq.size, dtype=np.int64)
+        conn = rank[inv.ravel()].reshape(-1, 4)
+        del raw, flat, uniq, first, inv, o, rank
         ka, kb, rptr, ridx, sptr, sidx = stencils(conn, a.cycles)
         # one fancy-index over the whole flat array, not one per edge
         u2[es] = (back[ka], back[kb], rptr, back[ridx])
         u3[es] = (back[ka], back[kb], sptr, back[sidx])
         rs = np.diff(rptr)
         ss = np.diff(sptr)
-        stats[es] = (len(ids), len(loc), len(ka), rs, ss)
+        stats[es] = (len(ids), len(back), len(ka), rs, ss)
 
     # --- the mastruct insertion wall ------------------------------------
     #
@@ -405,7 +432,7 @@ def main():
         # the deduplicating backend streams the transient away, so the count
         # that matters is the union, not the sum
 
-        nnz = final_structure(u2, u3, tets)
+        nnz = final_structure(u2, u3, tcn)
         if nnz >= INS_LIMIT:
             raise SystemExit(
                 'fbares: the deduplicated structure of this deck holds %.2e '
@@ -520,12 +547,14 @@ def main():
         fh.write('\n')
 
     u5decl, done_step = False, False
+    # two streaming passes over the source rather than holding the whole deck
+    # as a list of lines: on the 0.0060 cell that list is ~0.7 GB
     drop, sawnp = False, any(
         iskw(l) and l.upper().replace(' ', '').startswith(('*NODEPRINT',
                                                            '*NODEFILE'))
-        for l in lines)
+        for l in open(a.src))
     eid = maxel
-    for ln in lines:
+    for ln in _rstrip_lines(a.src):
         if not iskw(ln):
             # a data line of a dropped block goes with it
             if drop:
