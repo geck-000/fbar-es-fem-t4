@@ -80,6 +80,81 @@ INS_LIMIT = 2 ** 31
 NAMES = [a + b for a in LETTERS for b in LETTERS]
 
 
+def final_structure(u2, u3, tets):
+    """Exact number of distinct off-diagonal (dof,dof) pairs the matrix
+    structure ends up holding.
+
+    This is the UNION of the per-element patterns.  The INS_LIMIT count above
+    is their SUM, which is ~20-25x larger because the same pair is produced by
+    many different edges.  A ccx built with the deduplicating mastruct backend
+    (CCX_MASTRUCT_DEDUP=chunk) never materialises that sum, so the union is
+    the only thing that has to fit -- both under 2**31 and in RAM.
+
+    Every U2 pattern (ring x ring) sits inside the U3 pattern of the same edge
+    (ring x support, ring subset of support), so with R the edge-by-node ring
+    incidence and S the edge-by-node support incidence, the F-bar part of the
+    union is just the sparsity pattern of R^T S.  Plain C3D4 elements outside
+    the treated sets are in no stencil at all, so their own 4-cliques (T^T T)
+    are unioned in on top.
+
+    This counts the element patterns only.  ccx additionally expands DOFs that
+    carry an SPC or MPC, and drops the constrained ones, which moves entries
+    around.  Measured on the LCOL4 0.0240 undrained deck this lands 2% high --
+    1.67e7 here against the 16 378 633 ccx goes on to report -- so treat it as
+    a tight upper estimate rather than the exact final nnz.
+    """
+    ring_e, ring_n, supp_e, supp_n = [], [], [], []
+    h = 0
+    for es in u3:
+        for (_, _, r), (_, _, s) in zip(u2[es], u3[es]):
+            ring_e.append(np.full(len(r), h, dtype=np.int64))
+            ring_n.append(np.asarray(r, dtype=np.int64))
+            supp_e.append(np.full(len(s), h, dtype=np.int64))
+            supp_n.append(np.asarray(s, dtype=np.int64))
+            h += 1
+
+    T = np.asarray(list(tets.values()), dtype=np.int64) if tets else \
+        np.empty((0, 4), dtype=np.int64)
+
+    nn = 1
+    for a in (supp_n, ring_n):
+        if a:
+            nn = max(nn, max(int(x.max()) for x in a if x.size))
+    if T.size:
+        nn = max(nn, int(T.max()))
+    nn += 1
+
+    def inc(rows, cols, nr):
+        rows = np.concatenate(rows) if rows else np.empty(0, dtype=np.int64)
+        cols = np.concatenate(cols) if cols else np.empty(0, dtype=np.int64)
+        return sp.csr_matrix((np.ones(rows.size, dtype=np.int32), (rows, cols)),
+                             shape=(nr, nn))
+
+    A = None
+    if h:
+        R = inc(ring_e, ring_n, h)
+        S = inc(supp_e, supp_n, h)
+        A = (R.T @ S).tocsr()
+    if T.size:
+        te = np.repeat(np.arange(T.shape[0], dtype=np.int64), 4)
+        Ti = inc([te], [T.reshape(-1)], T.shape[0])
+        P = (Ti.T @ Ti).tocsr()
+        A = P if A is None else A + P
+    if A is None:
+        return 0
+
+    # unordered pairs: symmetrise the pattern, then split diagonal from
+    # off-diagonal (each off-diagonal pair is stored twice)
+    A.data[:] = 1
+    B = A + A.T
+    B.data[:] = 1
+    ndiag = int(B.diagonal().astype(bool).sum())
+    noff = (B.nnz - ndiag) // 2
+    # a node pair i!=j contributes a full 3x3 block (9 dof pairs); a node with
+    # itself contributes the 3 off-diagonal entries of its own block
+    return int(9 * noff + 3 * ndiag)
+
+
 def iskw(line):
     s = line.lstrip()
     return s.startswith('*') and not s.startswith('**')
@@ -213,6 +288,14 @@ def main():
                     help='c, the number of cyclic smoothings of J, eq. (6)-(7)')
     ap.add_argument('--solver', default=os.environ.get('FBAR_SOLVER',
                                                        'PARDISO'))
+    ap.add_argument('--direct-structure', action='store_true',
+                    default=bool(int(os.environ.get(
+                        'FBAR_DIRECT_STRUCTURE', 0))),
+                    help='target a ccx built with the deduplicating mastruct '
+                         'backend (CCX_MASTRUCT_DEDUP=chunk).  Gates on the '
+                         'size of the FINAL structure instead of the '
+                         'transient insertion count, which that backend '
+                         'never materialises.')
     a = ap.parse_args()
 
     nodes, tets, elset_of, mat_of, elastic = parse(a.src)
@@ -286,14 +369,29 @@ def main():
         ds = 3 * st[4].astype('int64')          # U3 support dofs
         do = ds - rr                            # U3 dofs OUTSIDE the ring
         ins += int(_t(rr).sum() + (_t(ds) - _t(do)).sum())
-    if ins >= INS_LIMIT:
+    nnz = None
+    if a.direct_structure:
+
+        # the deduplicating backend streams the transient away, so the count
+        # that matters is the union, not the sum
+
+        nnz = final_structure(u2, u3, tets)
+        if nnz >= INS_LIMIT:
+            raise SystemExit(
+                'fbares: the deduplicated structure of this deck holds %.2e '
+                '(dof,dof) pairs, past the %.2e a 32-bit ITG can index.  Use '
+                '--cycles %d or coarsen the mesh.'
+                % (nnz, float(INS_LIMIT), max(a.cycles - 1, 0)))
+    elif ins >= INS_LIMIT:
         raise SystemExit(
             'fbares: this deck would make mastruct.c push %.2e (dof,dof) '
             'entries onto mast1, past the %.2e a 32-bit ITG can index -- ccx '
             'dies in u_realloc with a NEGATIVE allocation size while growing '
-            'the list. Use --cycles %d, '
-            'or coarsen the mesh -- the count is quadratic in the stencil, so '
-            'one fewer smoothing cycle is worth about an order of magnitude.'
+            'the list. Use --cycles %d, or coarsen the mesh -- the count is '
+            'quadratic in the stencil, so one fewer smoothing cycle is worth '
+            'about an order of magnitude.  A ccx built with the deduplicating '
+            'mastruct backend does not have this limit: rebuild it and pass '
+            '--direct-structure.'
             % (ins, float(INS_LIMIT), max(a.cycles - 1, 0)))
 
     # --- the 255-node wall ----------------------------------------------
@@ -482,6 +580,10 @@ def main():
     print('  %d element types; widest element %d DOF; %.2e (dof,dof) '
           'insertions into mastruct = %.1f GB (limit %.2e)'
           % (len(groups), ndof, ins, ins * 8.0 / 2.0 ** 30, float(INS_LIMIT)))
+    if nnz is not None:
+        print('  deduplicated structure %.2e pairs (%.1fx smaller) = %.1f GB '
+              'of irow -- run ccx with CCX_MASTRUCT_DEDUP=chunk'
+              % (nnz, ins / float(nnz), nnz * 4.0 / 2.0 ** 30))
     if ndof > 765:
         print('  NOTE: the e_c3d_u* family and mafillsm.f hold 765 DOF '
               '(255 nodes, the lakon(8:8) encoding limit).  %d DOF cannot '
