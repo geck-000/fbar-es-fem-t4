@@ -16,6 +16,7 @@ cd src && make -j8
 | `0004-ring-support-reduction.patch` | stops allocating the identically-zero `(support − ring) × (support − ring)` block of `U3` |
 | `0005-pardiso-out-of-core.patch` | opt-in out-of-core PARDISO for factors that do not fit in RAM |
 | `0006-dedup-matrix-structure.patch` | deduplicates the matrix structure as it is built, so peak memory tracks the final `irow`/`jq` (~24x smaller) instead of the transient `mast1`/`next` list -- the only way past the 2^31 insertion wall at `L_mesh` 0.0080 and 0.0060 |
+| `0007-pardiso-memreport-and-single.patch` | `CCX_PARDISO_MEMREPORT` reports what a factorisation needs from the ANALYSIS phase alone, in seconds instead of hours; `CCX_PARDISO_SINGLE` factors in single precision, -39% peak and -37% time for 1.3 ppm on the reaction |
 
 The element sources themselves (`u2edge.f`, `u3vol.f`, `e_c3d_u2.f`,
 `e_c3d_u3.f`, `e_c3d_u4.f`, `resultsmech_u2.f`, `resultsmech_u3.f`,
