@@ -49,6 +49,7 @@ matrix widened from 150 to 520 DOF along the whole e_c3d_u* path.
 import argparse
 import os
 import sys
+from array import array
 from collections import defaultdict
 
 import numpy as np
@@ -103,15 +104,20 @@ def final_structure(u2, u3, tets):
     1.67e7 here against the 16 378 633 ccx goes on to report -- so treat it as
     a tight upper estimate rather than the exact final nnz.
     """
+    # u2/u3 arrive as CSR (edge offsets + flat global node indices), which is
+    # already the incidence pattern this needs -- no per-edge work at all.
     ring_e, ring_n, supp_e, supp_n = [], [], [], []
     h = 0
     for es in u3:
-        for (_, _, r), (_, _, s) in zip(u2[es], u3[es]):
-            ring_e.append(np.full(len(r), h, dtype=np.int64))
-            ring_n.append(np.asarray(r, dtype=np.int64))
-            supp_e.append(np.full(len(s), h, dtype=np.int64))
-            supp_n.append(np.asarray(s, dtype=np.int64))
-            h += 1
+        ka, _, rptr, ridx = u2[es]
+        _, _, sptr, sidx = u3[es]
+        ne = len(ka)
+        base = np.arange(h, h + ne, dtype=np.int64)
+        ring_e.append(np.repeat(base, np.diff(rptr)))
+        ring_n.append(ridx.astype(np.int64, copy=False))
+        supp_e.append(np.repeat(base, np.diff(sptr)))
+        supp_n.append(sidx.astype(np.int64, copy=False))
+        h += ne
 
     T = np.asarray(list(tets.values()), dtype=np.int64) if tets else \
         np.empty((0, 4), dtype=np.int64)
@@ -161,8 +167,13 @@ def iskw(line):
 
 
 def parse(path):
-    """nodes, tets, elset membership, elset -> material, material -> (E, nu)."""
-    nodes, tets = {}, {}
+    """tets, elset membership, elset -> material, material -> (E, nu).
+
+    Coordinates are deliberately NOT kept: the stencils are pure connectivity
+    and nothing downstream reads a node position, so holding them costs a few
+    hundred MB on a fine cell for nothing.
+    """
+    tets = {}
     elset_of, mat_of, elastic = defaultdict(list), {}, {}
     mode, cur, curmat = None, None, None
     for ln in open(path):
@@ -197,15 +208,13 @@ def parse(path):
                 mode = 'el'
             continue
         f = [x.strip() for x in s.split(',') if x.strip()]
-        if mode == 'n' and len(f) >= 4:
-            nodes[int(f[0])] = (float(f[1]), float(f[2]), float(f[3]))
-        elif mode == 'e' and len(f) >= 5:
+        if mode == 'e' and len(f) >= 5:
             tets[int(f[0])] = tuple(int(x) for x in f[1:5])
             elset_of[cur].append(int(f[0]))
         elif mode == 'el' and curmat and len(f) >= 2:
             elastic.setdefault(curmat, (float(f[0]), float(f[1])))
             mode = None
-    return nodes, tets, elset_of, mat_of, elastic
+    return tets, elset_of, mat_of, elastic
 
 
 def stencils(conn, ncyc, chunk=20000):
@@ -226,18 +235,24 @@ def stencils(conn, ncyc, chunk=20000):
                         shape=(ne, nn)).tocsr()
     inc.data[:] = 1
 
-    # edges of this material, and the elements at each
-    ekey = {}
-    for e in range(ne):
-        t = conn[e]
-        for i in range(4):
-            for j in range(i + 1, 4):
-                a, b = (t[i], t[j]) if t[i] < t[j] else (t[j], t[i])
-                ekey.setdefault((int(a), int(b)), []).append(e)
-    keys = sorted(ekey)
-    rows = np.repeat(np.arange(len(keys)),
-                     [len(ekey[k]) for k in keys])
-    cols = np.fromiter((e for k in keys for e in ekey[k]), dtype=np.int64)
+    # edges of this material, and the elements at each.
+    #
+    # Vectorised: a dict keyed by (int, int) tuples costs a few hundred bytes
+    # per edge and a Python loop over 6*ne of them, which at 0.0060 is ~4M
+    # edges and ~1 GB of dict before anything else is allocated.  Packing each
+    # sorted pair into one int64 and calling np.unique gives the same edge
+    # list in the same order -- lexicographic by (lo, hi), since hi < nn.
+    ii = np.array([0, 0, 0, 1, 1, 2])
+    jj = np.array([1, 2, 3, 2, 3, 3])
+    ea = conn[:, ii].ravel()
+    eb = conn[:, jj].ravel()
+    lo = np.minimum(ea, eb)
+    hi = np.maximum(ea, eb)
+    upair, inv = np.unique(lo * nn + hi, return_inverse=True)
+    del ea, eb, lo, hi
+    keys = list(zip((upair // nn).tolist(), (upair % nn).tolist()))
+    rows = inv.ravel()
+    cols = np.repeat(np.arange(ne, dtype=np.int64), 6)
     E = sp.coo_matrix((np.ones(len(cols), dtype=np.int8), (rows, cols)),
                       shape=(len(keys), ne)).tocsr()
     E.data[:] = 1
@@ -246,22 +261,38 @@ def stencils(conn, ncyc, chunk=20000):
     A = (inc @ inc.T).tocsr()
     A.data[:] = 1
 
-    ring, supp = [], []
+    # Returned FLAT, in CSR form (offsets + one index array), not as a list
+    # of one small array per edge: at 0.0060 that list is ~4M ndarray objects
+    # per side, whose ~112 bytes of object header each cost more than the
+    # node indices they carry.
+    rcnt, ridx, scnt, sidx = [], [], [], []
     for lo in range(0, len(keys), chunk):
         blk = E[lo:lo + chunk]
         r = (blk @ inc).tocsr()          # U2: nodes of the edge's own tets
         r.data[:] = 1
-        for i in range(r.shape[0]):
-            ring.append(r.indices[r.indptr[i]:r.indptr[i + 1]])
+        rcnt.append(np.diff(r.indptr))
+        ridx.append(r.indices[:r.indptr[-1]])
         s = blk
         for _ in range(ncyc):
             s = (s @ A).tocsr()
             s.data[:] = 1
         w = (s @ inc).tocsr()            # U3: nodes of the E A^c support
         w.data[:] = 1
-        for i in range(w.shape[0]):
-            supp.append(w.indices[w.indptr[i]:w.indptr[i + 1]])
-    return keys, ring, supp
+        scnt.append(np.diff(w.indptr))
+        sidx.append(w.indices[:w.indptr[-1]])
+
+    def csr(cnt, idx):
+        cnt = np.concatenate(cnt) if cnt else np.zeros(0, dtype=np.int64)
+        ptr = np.zeros(len(cnt) + 1, dtype=np.int64)
+        np.cumsum(cnt, out=ptr[1:])
+        return ptr, (np.concatenate(idx) if idx
+                     else np.zeros(0, dtype=np.int64))
+
+    ka = np.array([k[0] for k in keys], dtype=np.int64)
+    kb = np.array([k[1] for k in keys], dtype=np.int64)
+    rptr, ridx = csr(rcnt, ridx)
+    sptr, sidx = csr(scnt, sidx)
+    return ka, kb, rptr, ridx, sptr, sidx
 
 
 def card(eid, conn_nodes):
@@ -298,7 +329,7 @@ def main():
                          'never materialises.')
     a = ap.parse_args()
 
-    nodes, tets, elset_of, mat_of, elastic = parse(a.src)
+    tets, elset_of, mat_of, elastic = parse(a.src)
     sets = a.elset or sorted(elset_of)
     for es in sets:
         if es not in elset_of:
@@ -334,14 +365,13 @@ def main():
         back = np.empty(len(loc), dtype=np.int64)
         for n, i in loc.items():
             back[i] = n
-        keys, ring, supp = stencils(conn, a.cycles)
-        u2[es] = [(int(back[k[0]]), int(back[k[1]]), back[r]) 
-                  for k, r in zip(keys, ring)]
-        u3[es] = [(int(back[k[0]]), int(back[k[1]]), back[s])
-                  for k, s in zip(keys, supp)]
-        rs = np.array([len(r) for r in ring])
-        ss = np.array([len(s) for s in supp])
-        stats[es] = (len(ids), len(loc), len(keys), rs, ss)
+        ka, kb, rptr, ridx, sptr, sidx = stencils(conn, a.cycles)
+        # one fancy-index over the whole flat array, not one per edge
+        u2[es] = (back[ka], back[kb], rptr, back[ridx])
+        u3[es] = (back[ka], back[kb], sptr, back[sidx])
+        rs = np.diff(rptr)
+        ss = np.diff(sptr)
+        stats[es] = (len(ids), len(loc), len(ka), rs, ss)
 
     # --- the mastruct insertion wall ------------------------------------
     #
@@ -420,24 +450,33 @@ def main():
     # wrong is not silent -- e_c3d_u3 checks that tbar vanishes past nring and
     # stops with the element number if it does not.
     groups = {}
+
+    def push(key, row):
+        g = groups.get(key)
+        if g is None:
+            g = groups[key] = array('q')
+        g.extend(row)
+
     for es in sets:
-        for na, nb, nl in u2[es]:
-            rest = sorted(int(x) for x in nl if x != na and x != nb)
-            groups.setdefault(('U2', es, len(nl), len(nl)), []).append(
-                [na, nb] + rest)
-        for (ra, rb, rl), (sa, sb, sl) in zip(u2[es], u3[es]):
-            assert (ra, rb) == (sa, sb), 'u2/u3 edge lists out of step'
+        ka, kb, rptr, ridx = u2[es]
+        _, _, sptr, sidx = u3[es]
+        for h in range(len(ka)):
+            na = int(ka[h])
+            nb = int(kb[h])
+            rl = ridx[rptr[h]:rptr[h + 1]]
+            sl = sidx[sptr[h]:sptr[h + 1]]
+            rest = sorted(int(x) for x in rl if x != na and x != nb)
+            push(('U2', es, len(rl), len(rl)), [na, nb] + rest)
             ring = set(int(x) for x in rl)
             supp = set(int(x) for x in sl)
             if not ring <= supp:
                 raise SystemExit(
                     'fbares: the edge ring of %d-%d is not contained in its '
                     'E A^c support -- the ring-first ordering the element '
-                    'relies on is not well defined' % (ra, rb))
-            inner = [ra, rb] + sorted(ring - {ra, rb})
+                    'relies on is not well defined' % (na, nb))
+            inner = [na, nb] + sorted(ring - {na, nb})
             outer = sorted(supp - ring)
-            groups.setdefault(('U3', es, len(supp), len(inner)), []).append(
-                inner + outer)
+            push(('U3', es, len(supp), len(inner)), inner + outer)
 
     # --- type names -----------------------------------------------------
     #
@@ -474,7 +513,13 @@ def main():
         suffix[k] = LETTERS[nr - 1] + NAMES[j]
 
     # --- emit -------------------------------------------------------------
-    out, u5decl, done_step = [], False, False
+    fh = open(a.dst, 'w')
+
+    def emit(s):
+        fh.write(s)
+        fh.write('\n')
+
+    u5decl, done_step = False, False
     drop, sawnp = False, any(
         iskw(l) and l.upper().replace(' ', '').startswith(('*NODEPRINT',
                                                            '*NODEFILE'))
@@ -496,7 +541,7 @@ def main():
             # if the deck has none.
             drop = u.startswith('*ELPRINT') or u.startswith('*ELFILE')
             if drop:
-                out.append('** FBAR fbares: dropped '
+                emit('** FBAR fbares: dropped '
                            + ln.split(',')[0].strip()
                            + ' -- no element in an F-bar deck carries stress')
                 continue
@@ -507,15 +552,15 @@ def main():
                 # *NODE PRINT,NSET=NALL is answered with 'node set NALL does
                 # not exist' and an EMPTY .dat.  *NODE FILE needs no set and
                 # writes the .frd the post-processing already reads.
-                out.append('*NODE FILE')
-                out.append('U,RF')
+                emit('*NODE FILE')
+                emit('U,RF')
             if u.startswith('*ELEMENT') and any(
                     ('ELSET=' + e).upper() in u for e in sets):
                 if not u5decl:
-                    out.append('*USER ELEMENT,TYPE=U4,NODES=4,'
+                    emit('*USER ELEMENT,TYPE=U4,NODES=4,'
                                'INTEGRATIONPOINTS=1,MAXDOF=3')
                     u5decl = True
-                out.append(ln.replace('C3D4', 'U4').replace('c3d4', 'U4'))
+                emit(ln.replace('C3D4', 'U4').replace('c3d4', 'U4'))
                 continue
             if u.startswith('*STATIC'):
                 # The volumetric operator of eq. (17) is NOT symmetric, so the
@@ -531,24 +576,27 @@ def main():
                 # interleaving them puts a multi-line element's continuation
                 # at a chain boundary, where ccx reads it as a fresh element
                 # and reports 'element N is already defined'.
-                out.append('** FBAR F-barES-FEM-T4(c=%d): %d edge domains'
-                           % (a.cycles, sum(len(u2[e]) for e in sets)))
+                emit('** FBAR F-barES-FEM-T4(c=%d): %d edge domains'
+                           % (a.cycles, sum(len(u2[e][0]) for e in sets)))
                 for k in sorted(groups):
-                    out.append('*USER ELEMENT,TYPE=%s%s,NODES=%d,'
+                    emit('*USER ELEMENT,TYPE=%s%s,NODES=%d,'
                                'INTEGRATIONPOINTS=1,MAXDOF=3'
                                % (k[0], suffix[k], k[2]))
                 for k in sorted(groups):
                     kind, es, sz, nr = k
                     tag = 'FBD' if kind == 'U2' else 'FBV'
-                    out.append('*ELEMENT,TYPE=%s%s,ELSET=%s_%s'
+                    emit('*ELEMENT,TYPE=%s%s,ELSET=%s_%s'
                                % (kind, suffix[k], tag, es))
-                    for conn in groups[k]:
+                    g, w = groups[k], k[2]
+                    for off in range(0, len(g), w):
+                        conn = g[off:off + w]
                         eid += 1
                         # konl(1), konl(2) ARE THE EDGE NODES, in both U2 and
                         # U3; u2edge/u3vol identify the edge from them and
                         # find the tets themselves.  For U3, konl(1..nring)
                         # is the edge ring -- see above.
-                        out.extend(card(eid, conn))
+                        for _c in card(eid, conn):
+                            emit(_c)
                 # Their OWN elset + *SOLID SECTION, never the phase's: an
                 # element in the phase elset joins its *EL PRINT set, and
                 # printoutelem.f would try to integrate a smoothing domain
@@ -557,11 +605,11 @@ def main():
                 for k in sorted(groups):
                     kind, es, sz, nr = k
                     tag = 'FBD' if kind == 'U2' else 'FBV'
-                    out.append('*SOLID SECTION,ELSET=%s_%s,MATERIAL=%s'
+                    emit('*SOLID SECTION,ELSET=%s_%s,MATERIAL=%s'
                                % (tag, es, mat_of[es]))
-        out.append(ln)
+        emit(ln)
 
-    open(a.dst, 'w').write('\n'.join(out) + '\n')
+    fh.close()
 
     print('fbares: %s -> %s   (c = %d)' % (a.src, a.dst, a.cycles))
     for es in sets:
