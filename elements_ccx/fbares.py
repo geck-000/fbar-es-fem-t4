@@ -114,9 +114,9 @@ def final_structure(u2, u3, tcn):
         ne = len(ka)
         base = np.arange(h, h + ne, dtype=np.int64)
         ring_e.append(np.repeat(base, np.diff(rptr)))
-        ring_n.append(ridx.astype(np.int64, copy=False))
+        ring_n.append(ridx)
         supp_e.append(np.repeat(base, np.diff(sptr)))
-        supp_n.append(sidx.astype(np.int64, copy=False))
+        supp_n.append(sidx)
         h += ne
 
     T = tcn
@@ -131,7 +131,8 @@ def final_structure(u2, u3, tcn):
 
     def inc(rows, cols, nr):
         rows = np.concatenate(rows) if rows else np.empty(0, dtype=np.int64)
-        cols = np.concatenate(cols) if cols else np.empty(0, dtype=np.int64)
+        cols = (np.concatenate(cols).astype(np.int64, copy=False) if cols
+                else np.empty(0, dtype=np.int64))
         return sp.csr_matrix((np.ones(rows.size, dtype=np.int32), (rows, cols)),
                              shape=(nr, nn))
 
@@ -341,14 +342,6 @@ def main():
                     help='c, the number of cyclic smoothings of J, eq. (6)-(7)')
     ap.add_argument('--solver', default=os.environ.get('FBAR_SOLVER',
                                                        'PARDISO'))
-    ap.add_argument('--direct-structure', action='store_true',
-                    default=bool(int(os.environ.get(
-                        'FBAR_DIRECT_STRUCTURE', 0))),
-                    help='target a ccx built with the deduplicating mastruct '
-                         'backend (CCX_MASTRUCT_DEDUP=chunk).  Gates on the '
-                         'size of the FINAL structure instead of the '
-                         'transient insertion count, which that backend '
-                         'never materialises.')
     a = ap.parse_args()
 
     tid, tcn, elset_of, mat_of, elastic = parse(a.src)
@@ -387,7 +380,9 @@ def main():
         uniq, first, inv = np.unique(flat, return_index=True,
                                      return_inverse=True)
         o = np.argsort(first)
-        back = uniq[o]
+        # global node ids fit int32 comfortably; these arrays are the biggest
+        # thing the stencils carry, so do not spend 8 bytes on each
+        back = uniq[o].astype(np.int32)
         rank = np.empty(uniq.size, dtype=np.int64)
         rank[o] = np.arange(uniq.size, dtype=np.int64)
         conn = rank[inv.ravel()].reshape(-1, 4)
@@ -417,39 +412,27 @@ def main():
     # with T(d) = d(d+1)/2, instead of T(3 n_h) + T(3 r_h) for the dense
     # block.  Still quadratic in the stencil, and still the real ceiling on
     # c, but a factor ~3.3 lower at c = 1.
-    def _t(d):
-        return d * (d + 1) // 2
-
-    ins = 0
-    for st in stats.values():
-        rr = 3 * st[3].astype('int64')          # U2 ring dofs
-        ds = 3 * st[4].astype('int64')          # U3 support dofs
-        do = ds - rr                            # U3 dofs OUTSIDE the ring
-        ins += int(_t(rr).sum() + (_t(ds) - _t(do)).sum())
-    nnz = None
-    if a.direct_structure:
-
-        # the deduplicating backend streams the transient away, so the count
-        # that matters is the union, not the sum
-
-        nnz = final_structure(u2, u3, tcn)
-        if nnz >= INS_LIMIT:
-            raise SystemExit(
-                'fbares: the deduplicated structure of this deck holds %.2e '
-                '(dof,dof) pairs, past the %.2e a 32-bit ITG can index.  Use '
-                '--cycles %d or coarsen the mesh.'
-                % (nnz, float(INS_LIMIT), max(a.cycles - 1, 0)))
-    elif ins >= INS_LIMIT:
+    # THE GATE IS ON THE FINAL STRUCTURE, ALWAYS.
+    #
+    # There used to be a second path here that gated on the TRANSIENT insertion
+    # count -- the sum above, what legacy mastruct.c pushes onto mast1 before
+    # sorting. That path is gone, and with it the --direct-structure flag that
+    # selected between them, because the transient count is a property of a
+    # backend nobody should now be building against: the deduplicating
+    # mastruct (CCX_MASTRUCT_DEDUP=chunk) streams the transient away and never
+    # materialises it, so gating on it rejected decks that build perfectly.
+    #
+    # Concretely it rejected the 2.5-element undrained cells of the sea-ice
+    # campaign at 5.20e9 transient pairs against a 2.15e9 limit, when their
+    # deduplicated structure fits comfortably. Keeping a flag whose default
+    # answer was wrong for the supported build is worse than having no flag.
+    nnz = final_structure(u2, u3, tcn)
+    if nnz >= INS_LIMIT:
         raise SystemExit(
-            'fbares: this deck would make mastruct.c push %.2e (dof,dof) '
-            'entries onto mast1, past the %.2e a 32-bit ITG can index -- ccx '
-            'dies in u_realloc with a NEGATIVE allocation size while growing '
-            'the list. Use --cycles %d, or coarsen the mesh -- the count is '
-            'quadratic in the stencil, so one fewer smoothing cycle is worth '
-            'about an order of magnitude.  A ccx built with the deduplicating '
-            'mastruct backend does not have this limit: rebuild it and pass '
-            '--direct-structure.'
-            % (ins, float(INS_LIMIT), max(a.cycles - 1, 0)))
+            'fbares: the deduplicated structure of this deck holds %.2e '
+            '(dof,dof) pairs, past the %.2e a 32-bit ITG can index.  Use '
+            '--cycles %d or coarsen the mesh.'
+            % (nnz, float(INS_LIMIT), max(a.cycles - 1, 0)))
 
     # --- the 255-node wall ----------------------------------------------
     worst = max((s[4].max(), es) for es, s in stats.items())
@@ -481,7 +464,7 @@ def main():
     def push(key, row):
         g = groups.get(key)
         if g is None:
-            g = groups[key] = array('q')
+            g = groups[key] = array('i')
         g.extend(row)
 
     for es in sets:
@@ -654,13 +637,10 @@ def main():
               '(%d DOF)' % (ss.mean(), np.percentile(ss, 99), ss.max(),
                             3 * (ss.max() + 0)))
     ndof = 3 * max(s[4].max() for s in stats.values())
-    print('  %d element types; widest element %d DOF; %.2e (dof,dof) '
-          'insertions into mastruct = %.1f GB (limit %.2e)'
-          % (len(groups), ndof, ins, ins * 8.0 / 2.0 ** 30, float(INS_LIMIT)))
-    if nnz is not None:
-        print('  deduplicated structure %.2e pairs (%.1fx smaller) = %.1f GB '
-              'of irow -- run ccx with CCX_MASTRUCT_DEDUP=chunk'
-              % (nnz, ins / float(nnz), nnz * 4.0 / 2.0 ** 30))
+    print('  %d element types; widest element %d DOF' % (len(groups), ndof))
+    print('  deduplicated structure %.2e pairs = %.1f GB of irow -- '
+          'run ccx with CCX_MASTRUCT_DEDUP=chunk'
+          % (nnz, nnz * 4.0 / 2.0 ** 30))
     if ndof > 765:
         print('  NOTE: the e_c3d_u* family and mafillsm.f hold 765 DOF '
               '(255 nodes, the lakon(8:8) encoding limit).  %d DOF cannot '
